@@ -49,6 +49,7 @@ import type { OAuthStore } from "../oauth/store";
 import { onboardProofMessage } from "./privy";
 import { compileIntent } from "../venice/compiler";
 import { basescanLookup, registryResolvers } from "../venice/resolvers";
+import { errorsTotal, emitCardLog, emitErrorLog } from "@glasspay/engine";
 
 /** Privy-lane user id convention: the embedded (A_user) address, lowercased. One
  * user row per embedded wallet. */
@@ -132,9 +133,27 @@ export function apiRoutes(deps: AppDeps, oauth: OAuthStore): Hono<{ Variables: {
     try {
       return c.json((await fn()) as never);
     } catch (e) {
-      if (e instanceof ForbiddenError) return c.json({ error: e.message }, 403);
-      if (e instanceof RefusalError) return c.json(e.toJSON(), 422);
-      if (e instanceof EngineError) return c.json({ status: "error", stage: e.stage, message: e.message }, 502);
+      // Track all errors via SigNoz metrics and structured logs
+      errorsTotal.add(1);
+      const route = c.req.routePath ?? c.req.path;
+      const method = c.req.method;
+      if (e instanceof ForbiddenError) {
+        emitErrorLog(`HTTP ${method} ${route}`, e.message, { status: "403" });
+        return c.json({ error: e.message }, 403);
+      }
+      if (e instanceof RefusalError) {
+        const refusal = e.toJSON();
+        emitErrorLog(`HTTP ${method} ${route}`, e.message, {
+          status: "422",
+          code: refusal.code ?? "",
+        });
+        return c.json(refusal, 422);
+      }
+      if (e instanceof EngineError) {
+        emitErrorLog(`HTTP ${method} ${route}`, e.message, { status: "502", stage: e.stage });
+        return c.json({ status: "error", stage: e.stage, message: e.message }, 502);
+      }
+      emitErrorLog(`HTTP ${method} ${route}`, e instanceof Error ? e.message : String(e), { status: "500" });
       return c.json({ status: "error", message: e instanceof Error ? e.message : String(e) }, 500);
     }
   };
@@ -218,6 +237,7 @@ export function apiRoutes(deps: AppDeps, oauth: OAuthStore): Hono<{ Variables: {
         privyDid,
       });
       deps.store.setRevocationNonce(userId, nonce);
+      emitErrorLog("onboarded", "user onboarded", { user_id: userId, address: body.address ?? "", has_auth7702: String(!!body.auth7702) });
       return {
         user_id: userId,
         address: body.address,
