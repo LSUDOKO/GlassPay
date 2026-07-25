@@ -1,23 +1,179 @@
 # GlassPay
 
-**The agentic card.**
+**The agentic card — fully instrumented with OpenTelemetry + SigNoz.**
+
+[![SigNoz Hackathon](https://img.shields.io/badge/SigNoz-Hackathon-3021ff)](https://signoz.io)
+[![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-Instrumented-3021ff)](https://opentelemetry.io)
+[![Base Mainnet](https://img.shields.io/badge/Base-Mainnet-0052FF)](https://base.org)
+[![ERC-7710](https://img.shields.io/badge/ERC-7710-blue)](https://eips.ethereum.org/EIPS/eip-7710)
 
 Issue scoped, revocable spending cards from your wallet. Any agent plugs one in and pays within your limits. No keys, no gas, dead the moment you revoke.
 
-Built on MetaMask Smart Accounts (ERC-7710), settled gaslessly by 1Shot, pays the open web with x402, plugged into any agent over MCP. Fully instrumented with **OpenTelemetry + SigNoz** for transparent agentic finance observability.
+Built on MetaMask Smart Accounts (ERC-7710), settled gaslessly by 1Shot, pays the open web with x402, plugged into any agent over MCP.
 
-**Live:**
+---
 
-| Surface | URL |
-|---|---|
-| Dashboard (issue + manage cards · a fresh sign-in gets a guided welcome, funding step, and live tour) | _deploy your own_ |
-| Docs (the full reference, in-app) | _deploy your own_ |
-| Demo merchant (accepts the cards' Visas) | _deploy your own_ |
-| API + MCP endpoint | _deploy your own_ |
-| Source (this repo) | https://github.com/LSUDOKO/GlassPay |
-| Demo video | [YouTube](https://youtu.be/ymRo31OBZ8c) |
+## 🔭 SigNoz Hackathon — Full Observability
 
-Everything runs on Base mainnet with real USDC; the only simulated leg is the Visa rail (Stripe test-mode Issuing, labeled honestly wherever it appears).
+GlassPay is **fully instrumented with OpenTelemetry** and sends **traces, metrics, and logs** to **SigNoz Cloud** (and can self-host locally via the included `casting.yaml`).
+
+### What's Instrumented
+
+| Category | Signal | What's Tracked | How to See in SigNoz |
+|----------|--------|----------------|----------------------|
+| 🌐 **API Requests** | Trace | Every HTTP request with route pattern, method, status code, auth info | **Traces** → filter `service.name = glasspay-server` |
+| 💳 **Stripe Webhooks** | Trace | Auth decision flow (approve/decline) with decision and card context | **Traces** → search `stripe_webhook_auth` |
+| ⛓️ **On-Chain Payments** | Trace | Relayer redemption with USDC amount, gas, tx hash | **Traces** → search `1shot_relayer_redeem` |
+| 🤖 **AI Compilation** | Trace | Plain-language card intent → compiled terms, token usage | **Traces** → search `nl_compile` |
+| 🔄 **Reconcile Sweep** | Trace | Stuck-pending charge resolution (reconciled/still_pending counts) | **Traces** → search `reconcile_sweep` |
+| 💰 **Fiat Settlement** | Trace | Visa→on-chain settlement sweep (settled/left counts) | **Traces** → search `fiat_settle_sweep` |
+| 📈 **Cards Issued** | Metric | `glasspay_cards_issued_total` — root + sub-cards across all users | **Metrics** → counter |
+| 💵 **USDC Spent** | Metric | `glasspay_usdc_spent_total` — total USDC across all rails | **Metrics** → counter |
+| 🔵 **Active Cards** | Metric | `glasspay_active_cards` — live gauge of issued − revoked | **Metrics** → up-down counter |
+| 📊 **Charges Processed** | Metric | `glasspay_charges_total` — confirmed + pending + failed charges | **Metrics** → counter |
+| ⚠️ **API Errors** | Metric | `glasspay_errors_total` — every 403/422/502/500 response | **Metrics** → counter |
+| 📝 **Refusal Logs** | Log | Typed refusals with reason, card_id, attempted_amount | **Logs** → filter `refusal_reason` |
+| 💳 **Card Lifecycle** | Log | `issued`, `frozen`, `unfrozen`, `revoked`, `nuked`, `url_revealed`, `secret_rotated`, `onboarded` | **Logs** → filter `card_event` |
+| ✅ **Charge Confirmed** | Log | Successful payments with amount, kind, card_id | **Logs** → filter `charge_event = confirmed` |
+| ❌ **API Errors** | Log | Every error with operation, status code, route, method | **Logs** → filter `operation` or `error_message` |
+
+### 🎛️ Architecture
+
+```
+glasspay-server (Node.js)
+  │
+  ├─ @opentelemetry/auto-instrumentations-node  (automatic HTTP/fetch/DB spans)
+  ├─ Manual instrumentation via trace API       (custom business spans)
+  ├─ Metrics via Meter API                      (counters + up-down counters)
+  ├─ Logs via Logger API                        (structured card lifecycle events)
+  │
+  └─ OTLP HTTP exporter (port 4318)
+       │
+       ▼
+  SigNoz Cloud (ingest.us2.signoz.cloud:443)
+       │
+       ├─ Traces  → distributed tracing waterfall
+       ├─ Metrics → dashboard panels + alerts
+       └─ Logs    → structured log explorer
+```
+
+The OTel SDK is initialized early via Bun `--preload` (`packages/server/src/otel.ts`) so auto-instrumentation wraps every module from boot. The engine package (`packages/engine/src/telemetry.ts`) declares all custom metrics and structured log functions.
+
+### 🔧 Self-Hosted SigNoz (Local Dev)
+
+A `casting.yaml` is included for deploying SigNoz locally with Foundry:
+
+```bash
+# Deploy SigNoz stack locally
+foundryctl cast -f casting.yaml --locked
+
+# SigNoz UI: http://localhost:3301
+# OTLP endpoint: http://localhost:4318
+# SigNoz MCP: http://localhost:8000
+```
+
+The `casting.yaml.lock` pins every Docker image to its content digest for reproducible deployments.
+
+### 📊 SigNoz Dashboard Panels
+
+Create a GlassPay dashboard in SigNoz with these panels:
+
+#### Panel 1: Cards Issued Over Time (Time Series)
+```sql
+SELECT toStartOfInterval(toDateTime(intDiv(timestamp, 1000000000)), INTERVAL 5 MINUTE) AS ts,
+       sum(value) AS value
+FROM signoz_metrics.distributed_samples_v2
+WHERE metric_name = 'glasspay_cards_issued_total'
+  AND temporality = 'Cumulative'
+  AND ts BETWEEN $start_datetime AND $end_datetime
+GROUP BY ts
+ORDER BY ts
+```
+
+#### Panel 2: Active Cards (Value / Gauge)
+```sql
+SELECT sum(value) AS active_cards
+FROM signoz_metrics.distributed_samples_v2
+WHERE metric_name = 'glasspay_active_cards'
+  AND temporality = 'Cumulative'
+  AND timestamp > now() * 1000000000 - 60000000000
+```
+
+#### Panel 3: USDC Spent (Time Series)
+```sql
+SELECT toStartOfInterval(toDateTime(intDiv(timestamp, 1000000000)), INTERVAL 5 MINUTE) AS ts,
+       sum(value) AS value
+FROM signoz_metrics.distributed_samples_v2
+WHERE metric_name = 'glasspay_usdc_spent_total'
+  AND temporality = 'Cumulative'
+  AND ts BETWEEN $start_datetime AND $end_datetime
+GROUP BY ts
+ORDER BY ts
+```
+
+#### Panel 4: API Errors (Time Series)
+```sql
+SELECT toStartOfInterval(toDateTime(intDiv(timestamp, 1000000000)), INTERVAL 5 MINUTE) AS ts,
+       sum(value) AS errors
+FROM signoz_metrics.distributed_samples_v2
+WHERE metric_name = 'glasspay_errors_total'
+  AND temporality = 'Cumulative'
+  AND ts BETWEEN $start_datetime AND $end_datetime
+GROUP BY ts
+ORDER BY ts
+```
+
+#### Panel 5: API Request Duration by Route
+```sql
+SELECT toStartOfInterval(timestamp, INTERVAL 5 MINUTE) AS ts,
+       bodyAttributes['http.route'] AS route,
+       avg(durationNano) / 1000000 AS avg_ms
+FROM signoz_traces.distributed_signoz_index_v2
+WHERE bodyAttributes['service.name'] = 'glasspay-server'
+  AND ts BETWEEN $start_datetime AND $end_datetime
+GROUP BY ts, route
+ORDER BY ts
+```
+
+### ⚠️ SigNoz Alerts
+
+Create alerts in SigNoz for these conditions:
+
+| Alert | Condition | Severity |
+|-------|-----------|----------|
+| High Error Rate | `glasspay_errors_total` rate > 10/min for 5 min | Critical |
+| No Cards Issued | `glasspay_cards_issued_total` has no new value for 30 min | Warning |
+| High API Latency | P99 HTTP duration > 5000ms for 5 min | Warning |
+| Spike in Refusals | Log count with `refusal_reason: *` > 20/min | Warning |
+
+### 🤖 SigNoz MCP Integration
+
+GlassPay includes the SigNoz MCP server for agentic observability workflows:
+
+```bash
+# Add the SigNoz MCP server to your AI agent
+claude mcp add signoz http://localhost:8000 \
+  --header "Authorization: Bearer $SIGNOZ_MCP_AUTH_TOKEN"
+```
+
+Your AI agent can then use SigNoz MCP tools to:
+- Query traces and logs from GlassPay
+- Create and modify dashboards
+- Set up and investigate alerts
+- Run ClickHouse queries against the observability data
+
+### 🏆 Judge's Checklist
+
+For SigNoz hackathon judges, this repo demonstrates:
+
+1. **Multiple signals** ✅ Traces + Metrics + Logs all flowing to SigNoz
+2. **Custom business metrics** ✅ `cards_issued_total`, `usdc_spent_total`, `active_cards`, `charges_total`, `errors_total` — counters that directly map to product KPIs
+3. **Structured logs** ✅ Card lifecycle events (`issued`, `frozen`, `revoked`, `nuked`, `onboarded`) with typed attributes
+4. **Custom spans** ✅ Business-logic spans (`stripe_webhook_auth`, `1shot_relayer_redeem`, `nl_compile`, `reconcile_sweep`, `fiat_settle_sweep`) with domain attributes
+5. **Auto-instrumentation** ✅ HTTP, fetch, DNS, and filesystem spans via `@opentelemetry/auto-instrumentations-node`
+6. **Hono middleware** ✅ Route-level span per request with method, path, status code
+7. **SigNoz MCP** ✅ Included `signoz-mcp-server` for agentic observability
+8. **Reproducible deployment** ✅ `casting.yaml` + `casting.yaml.lock` for `foundryctl cast`
 
 ---
 
@@ -37,6 +193,21 @@ your wallet (EIP-7702 smart account)
         └── sub-card ($1/week, one merchant)    ← redelegation, narrower terms
              └── sub-agent B plugs it in
 ```
+
+**Live:**
+
+| Surface | URL |
+|---|---|
+| Dashboard (issue + manage cards · a fresh sign-in gets a guided welcome, funding step, and live tour) | _deploy your own_ |
+| Docs (the full reference, in-app) | _deploy your own_ |
+| Demo merchant (accepts the cards' Visas) | _deploy your own_ |
+| API + MCP endpoint | _deploy your own_ |
+| Source (this repo) | https://github.com/LSUDOKO/GlassPay |
+| Demo video | [YouTube](https://youtu.be/ymRo31OBZ8c) |
+
+Everything runs on Base mainnet with real USDC; the only simulated leg is the Visa rail (Stripe test-mode Issuing, labeled honestly wherever it appears).
+
+---
 
 ## How a payment actually works
 
@@ -248,7 +419,7 @@ Direct links to the exact code behind each track, following the [MetaMask DevRel
 - **Delegations, create:** [`issueRootCard`](https://github.com/s0nderlabs/remit/blob/main/packages/engine/src/issuance.ts#L53) compiles human terms into caveats ([`compileCard`](https://github.com/s0nderlabs/remit/blob/main/packages/engine/src/compiler.ts#L270)), builds the delegation ([`buildRootDelegation`](https://github.com/s0nderlabs/remit/blob/main/packages/engine/src/delegations.ts#L93)), and signs it with the user's smart account ([`signWithSmartAccount`](https://github.com/s0nderlabs/remit/blob/main/packages/engine/src/delegations.ts#L156)).
 - **Delegations, redeem:** [`spend.ts`](https://github.com/s0nderlabs/remit/blob/main/packages/engine/src/spend.ts#L582) ships the leaf-first `permissionContext` to the relayer, which calls `DelegationManager.redeemDelegations` on-chain.
 - **Redelegation, create:** [`issueSubCard`](https://github.com/s0nderlabs/remit/blob/main/packages/engine/src/issuance.ts#L225) attenuates the parent's terms (caps only narrow) and builds a child delegation whose authority binds to the parent delegation's hash ([`buildChildDelegation`](https://github.com/s0nderlabs/remit/blob/main/packages/engine/src/delegations.ts#L110)). This is the agent-to-agent sub-card path.
-- **x402, server:** the ERC-7710 x402 facilitator ([`facilitatorRoutes`](https://github.com/s0nderlabs/remit/blob/main/packages/server/src/facilitator/routes.ts#L51): `/supported`, `/verify`, `/settle`) and the demo seller that emits the 402 challenge ([`sellerRoutes`](https://github.com/s0nderlabs/remit/blob/main/packages/server/src/seller/routes.ts#L21), [`assetTransferMethod: "erc7710"`](https://github.com/s0nderlabs/remit/blob/main/packages/server/src/seller/routes.ts#L34)).
+- **x402, server:** the ERC-7710 x402 facilitator ([`facilitatorRoutes`](https://github.com/s0nderlabs/remit/blob/main/packages/server/src/facilitator/routes.ts#L51): `/supported`, `/verify`, `/settle`) and the demo seller that emits the 402 challenge ([`sellerRoutes`](https://github.com/s0nderlabs/remit/main/packages/server/src/seller/routes.ts#L21), [`assetTransferMethod: \"erc7710\"`](https://github.com/s0nderlabs/remit/blob/main/packages/server/src/seller/routes.ts#L34)).
 - **x402, client (ERC-7710 asset transfer method):** [`buildX402Payload`](https://github.com/s0nderlabs/remit/blob/main/packages/engine/src/x402.ts#L64) carves a payment leaf and encodes the delegation chain into the x402 `permissionContext`; the `erc7710` asset-transfer method is [required here](https://github.com/s0nderlabs/remit/blob/main/packages/engine/src/x402.ts#L56).
 
 **1Shot API**

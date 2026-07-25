@@ -53,6 +53,18 @@ const NAV: { group: string; items: { id: string; label: string }[] }[] = [
     ],
   },
   {
+    group: "SigNoz",
+    items: [
+      { id: "signoz-overview", label: "Observability Overview" },
+      { id: "signoz-traces", label: "Traces" },
+      { id: "signoz-metrics", label: "Metrics" },
+      { id: "signoz-logs", label: "Structured Logs" },
+      { id: "signoz-dashboard", label: "Dashboard & Queries" },
+      { id: "signoz-mcp", label: "SigNoz MCP" },
+      { id: "signoz-alerts", label: "Alerts & Self-Hosting" },
+    ],
+  },
+  {
     group: "Reference",
     items: [
       { id: "api", label: "API Reference" },
@@ -651,6 +663,373 @@ droid     mcp add glasspay https://<host>/c/<secret>/mcp --type http`} />
                 8707), and revoked the instant the card is, cascading to the subtree.
               </li>
             </ul>
+          </Section>
+
+          {/* ---- SigNoz Observability ---- */}
+          <Section id="signoz-overview" title="SigNoz Observability">
+            <p className="docp">
+              GlassPay is <b>fully instrumented with OpenTelemetry</b> and ships <b>traces, metrics, and logs</b> to{" "}
+              <b>SigNoz Cloud</b> (and can self-host locally via the included <code>casting.yaml</code>). Every card
+              issuance, every payment, every refusal, every API call — all visible in SigNoz.
+            </p>
+
+            <h3>Architecture</h3>
+            <div className="docdiagram">
+              {`glasspay-server (Bun ─preload otel.ts)
+   │
+   ├─ @opentelemetry/auto-instrumentations-node
+   │  · HTTP spans (every API call)
+   │  · fetch spans (outbound requests)
+   │  · DNS, filesystem, database
+   │
+   ├─ Manual business spans (trace API)
+   │  · stripe_webhook_auth   (approve/decline decision)
+   │  · 1shot_relayer_redeem  (on-chain payment)
+   │  · nl_compile            (AI card compilation)
+   │  · reconcile_sweep       (stuck charge resolution)
+   │  · fiat_settle_sweep     (Visa→USDC settlement)
+   │
+   ├─ Custom metrics (Meter API)
+   │  · counters: cards_issued, charges, errors, usdc_spent
+   │  · gauge: active_cards
+   │
+   ├─ Structured logs (Logger API)
+   │  · card_event: issued, frozen, revoked, nuked, onboarded
+   │  · charge_event: confirmed, refused, pending
+   │  · operation: every API error with route, method, status
+   │
+   └─ OTLP HTTP exporter  →  SigNoz Cloud (or local :4318)`}
+            </div>
+
+            <h3>Env vars (already set on Railway)</h3>
+            <Code code={`OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.us2.signoz.cloud
+OTEL_EXPORTER_OTLP_HEADERS=signoz-ingestion-key=YOUR_KEY
+OTEL_TRACES_EXPORTER=otlp
+OTEL_METRICS_EXPORTER=otlp
+OTEL_LOGS_EXPORTER=otlp`} />
+            <p className="docp">
+              The OTel SDK initializes early via Bun <code>--preload</code> (<code>packages/server/src/otel.ts</code>)
+              so auto-instrumentation wraps every module from boot. The engine package (<code>packages/engine/src/telemetry.ts</code>)
+              declares all custom metrics and structured log functions — 5 counters, 2 log emitters, available for any
+              SigNoz dashboard panel.
+            </p>
+          </Section>
+
+          <Section id="signoz-traces" title="Traces — Distributed Tracing">
+            <p className="docp">
+              Every API request is wrapped in a root span by Hono middleware (<code>app.ts</code>) with attributes for
+              route pattern, HTTP method, URL, and response status code. Inside those (and running on their own
+              intervals), six custom business-logic spans carry domain-specific attributes.
+            </p>
+
+            <h3>Route-level spans (every request)</h3>
+            <p className="docp">
+              The Hono <code>app.use(&quot;*&quot;, ...)</code> middleware creates a span for every request, named{" "}
+              <code>{'HTTP {METHOD} {ROUTE}'}</code>. Navigate to <b>SigNoz → Traces</b>, filter by{" "}
+              <code>service.name = glasspay-server</code>, and see every API call with its duration, status, and route
+              pattern.
+            </p>
+
+            <h3>stripe_webhook_auth</h3>
+            <p className="docp">
+              Fires when Stripe calls the real-time auth webhook. Attributes: <code>decision</code> (approve/decline),{" "}
+              <code>card_id</code>, <code>amount</code>, <code>merchant</code>. Traces the full auth decision flow
+              inside Stripe&apos;s 2-second window.
+            </p>
+
+            <h3>1shot_relayer_redeem</h3>
+            <p className="docp">
+              Fires on every on-chain payment. Attributes: <code>usdc_amount</code> (string), <code>gas_fee_usdc</code>,{" "}
+              <code>memo</code>, <code>tx_hash</code>, <code>card_id</code>. Shows the full lifecycle of a USDC
+              redemption through the 1Shot Public Relayer.
+            </p>
+
+            <h3>nl_compile</h3>
+            <p className="docp">
+              Fires when Venice AI compiles a plain-language card request. Attributes: <code>prompt_tokens</code>,{" "}
+              <code>completion_tokens</code>, <code>model</code>. Tracks AI usage for cost monitoring.
+            </p>
+
+            <h3>reconcile_sweep</h3>
+            <p className="docp">
+              Runs on a configurable interval (default 5 min). Attributes: <code>reconciled</code> (count),{" "}
+              <code>still_pending</code> (count). Resolves stuck pending charges against chain truth.
+            </p>
+
+            <h3>fiat_settle_sweep</h3>
+            <p className="docp">
+              Runs on a configurable interval (default 60s). Attributes: <code>settled</code> (count),{" "}
+              <code>left</code> (count). Settles approved Visa charges as on-chain USDC transfers.
+            </p>
+          </Section>
+
+          <Section id="signoz-metrics" title="Metrics — Product KPIs">
+            <p className="docp">
+              Five custom counters are available in SigNoz Metrics. Navigate to <b>SigNoz → Metrics</b> and search for
+              any of the following metric names to build dashboard panels.
+            </p>
+
+            <Table
+              head={["Metric Name", "Type", "Description"]}
+              rows={[
+                [<code key="m">glasspay_cards_issued_total</code>, "Counter", "Total cards issued across all users (root + sub-cards). Increments on issue, finalize, and sub-card mint."],
+                [<code key="m">glasspay_usdc_spent_total</code>, "Counter", "Total USDC spent across all confirmed redemptions and fiat settlements. The dollar volume metric."],
+                [<code key="m">glasspay_active_cards</code>, "UpDownCounter", "Current live cards (issued − revoked). A gauge: add 1 on issue, subtract 1 on revoke/nuke."],
+                [<code key="m">glasspay_charges_total</code>, "Counter", "Total charges processed (confirmed + pending + failed). Payment throughput metric."],
+                [<code key="m">glasspay_errors_total</code>, "Counter", "Total API-level errors (403 refusals, 422 validation errors, 502 relay failures, 500 exceptions)."],
+              ]}
+            />
+
+            <p className="docp">
+              These metrics are created in <code>packages/engine/src/telemetry.ts</code> using the OpenTelemetry Metrics
+              API and exported via OTLP HTTP to SigNoz. They appear in the Metrics explorer under their metric names,
+              prefixed by the engine package.
+            </p>
+
+            <h3>Building a metric panel</h3>
+            <p className="docp">
+              In SigNoz, create a new dashboard, click <b>New Panel</b>, choose <b>Time Series</b>, then switch to the{" "}
+              <b>ClickHouse</b> query tab. The SigNoz metrics storage uses the{" "}
+              <code>signoz_metrics.distributed_samples_v2</code> table. Example query for cards issued:
+            </p>
+            <Code code={`SELECT toStartOfInterval(
+         toDateTime(intDiv(timestamp, 1000000000)),
+         INTERVAL 5 MINUTE) AS ts,
+       sum(value) AS value
+FROM signoz_metrics.distributed_samples_v2
+WHERE metric_name = 'glasspay_cards_issued_total'
+  AND temporality = 'Cumulative'
+  AND ts BETWEEN $start_datetime AND $end_datetime
+GROUP BY ts
+ORDER BY ts`} />
+          </Section>
+
+          <Section id="signoz-logs" title="Structured Logs — Event-Driven Observability">
+            <p className="docp">
+              GlassPay emits structured logs for every significant card lifecycle event. Navigate to <b>SigNoz → Logs</b>{" "}
+              and filter by <code>card_event</code>, <code>charge_event</code>, <code>refusal_reason</code>, or{" "}
+              <code>operation</code> to see exactly what happened.
+            </p>
+
+            <h3>Card lifecycle events</h3>
+            <Table
+              head={["Attribute", "Events", "Context"]}
+              rows={[
+                [<code key="m">card_event</code>, <code key="v">issued, frozen, unfrozen, revoked, nuked, url_revealed, secret_rotated, onboarded</code>, "Every card lifecycle transition with card_id and extra attributes (k_agent_address, address, has_auth7702 for onboarded)."],
+                [<code key="m">charge_event</code>, <code key="v">confirmed</code>, "Successful payments with amount (string), kind (crypto/fiat), and card_id."],
+                [<code key="m">refusal_reason</code>, <code key="v">over_period_limit, merchant_not_allowed, price_exceeds_max, card_frozen, …</code>, "Typed refusal with attempted_amount and card_id. Every declined payment leaves a structured trace."],
+                [<code key="m">operation</code>, <code key="v">{'HTTP {METHOD} {ROUTE}'}</code>, "API error logs with status code, error_message, and route info. Every 403/422/502/500 is logged."],
+              ]}
+            />
+
+            <h3>Example log searches</h3>
+            <ul className="docul">
+              <li className="docli"><code>card_event: &quot;issued&quot;</code> — see every card being created in real-time</li>
+              <li className="docli"><code>card_event: &quot;revoked&quot;</code> — track card revocations</li>
+              <li className="docli"><code>refusal_reason: *</code> — all payment refusals with typed reasons</li>
+              <li className="docli"><code>charge_event: &quot;confirmed&quot;</code> — successful payments with amounts</li>
+              <li className="docli"><code>operation: *</code> — all API errors grouped by operation</li>
+            </ul>
+
+            <p className="docp">
+              Logs are emitted using the OpenTelemetry Logger API (<code>@opentelemetry/api-logs</code>) through the{" "}
+              <code>logger.emit()</code> function. Each log carries its <code>severityText</code> (INFO, WARN, ERROR)
+              and structured attributes that SigNoz indexes automatically.
+            </p>
+          </Section>
+
+          <Section id="signoz-dashboard" title="SigNoz Dashboard & ClickHouse Queries">
+            <p className="docp">
+              Create a GlassPay dashboard in SigNoz with panels for every metric and trace attribute. Below are the
+              ClickHouse queries for each panel type.
+            </p>
+
+            <h3>Panel 1: Cards Issued Over Time</h3>
+            <p className="docp">
+              Panel Type: <b>Time Series</b>. Shows the rate of card issuances over time.
+            </p>
+            <Code code={`SELECT toStartOfInterval(
+         toDateTime(intDiv(timestamp, 1000000000)),
+         INTERVAL 5 MINUTE) AS ts,
+       sum(value) AS value
+FROM signoz_metrics.distributed_samples_v2
+WHERE metric_name = 'glasspay_cards_issued_total'
+  AND temporality = 'Cumulative'
+  AND ts BETWEEN $start_datetime AND $end_datetime
+GROUP BY ts
+ORDER BY ts`} />
+
+            <h3>Panel 2: Active Cards (Gauge)</h3>
+            <p className="docp">
+              Panel Type: <b>Value</b> (big number). Shows the current live card count.
+            </p>
+            <Code code={`SELECT sum(value) AS active_cards
+FROM signoz_metrics.distributed_samples_v2
+WHERE metric_name = 'glasspay_active_cards'
+  AND temporality = 'Cumulative'
+  AND timestamp > now() * 1000000000 - 60000000000`} />
+
+            <h3>Panel 3: USDC Spent</h3>
+            <p className="docp">
+              Panel Type: <b>Time Series</b>. Tracks cumulative USDC volume.
+            </p>
+            <Code code={`SELECT toStartOfInterval(
+         toDateTime(intDiv(timestamp, 1000000000)),
+         INTERVAL 5 MINUTE) AS ts,
+       sum(value) AS value
+FROM signoz_metrics.distributed_samples_v2
+WHERE metric_name = 'glasspay_usdc_spent_total'
+  AND temporality = 'Cumulative'
+  AND ts BETWEEN $start_datetime AND $end_datetime
+GROUP BY ts
+ORDER BY ts`} />
+
+            <h3>Panel 4: API Error Rate</h3>
+            <p className="docp">
+              Panel Type: <b>Time Series</b>. Track error spikes.
+            </p>
+            <Code code={`SELECT toStartOfInterval(
+         toDateTime(intDiv(timestamp, 1000000000)),
+         INTERVAL 5 MINUTE) AS ts,
+       sum(value) AS errors
+FROM signoz_metrics.distributed_samples_v2
+WHERE metric_name = 'glasspay_errors_total'
+  AND temporality = 'Cumulative'
+  AND ts BETWEEN $start_datetime AND $end_datetime
+GROUP BY ts
+ORDER BY ts`} />
+
+            <h3>Panel 5: API Request Duration by Route</h3>
+            <p className="docp">
+              Panel Type: <b>Time Series</b>. Uses trace data to show P99 latency per API route.
+            </p>
+            <Code code={`SELECT toStartOfInterval(timestamp, INTERVAL 5 MINUTE) AS ts,
+       bodyAttributes['http.route'] AS route,
+       avg(durationNano) / 1000000 AS avg_ms
+FROM signoz_traces.distributed_signoz_index_v2
+WHERE bodyAttributes['service.name'] = 'glasspay-server'
+  AND ts BETWEEN $start_datetime AND $end_datetime
+GROUP BY ts, route
+ORDER BY ts`} />
+
+            <Note>
+              The <code>bodyAttributes</code> access pattern varies by SigNoz version. In newer versions, use{" "}
+              <code>bodyAttributes[&apos;http.route&apos;]</code>. The <code>$start_datetime</code> and{" "}
+              <code>$end_datetime</code> variables are automatically provided by the SigNoz dashboard panel builder.
+            </Note>
+          </Section>
+
+          <Section id="signoz-mcp" title="SigNoz MCP — AI-Agent Observability">
+            <p className="docp">
+              The included <code>casting.yaml</code> ships a <b>SigNoz MCP server</b> alongside the SigNoz stack. This
+              lets your AI agent query traces, logs, and metrics directly — and even create dashboards and alerts
+              autonomously.
+            </p>
+
+            <h3>Connect your agent to SigNoz MCP</h3>
+            <Code code={`# Self-hosted (from casting.yaml):
+claude mcp add signoz http://localhost:8000 \\
+  --header "Authorization: Bearer glasspay_mcp_dev"
+
+# SigNoz Cloud (API-based):
+claude mcp add signoz https://signoz.io/api/mcp \\
+  --header "Authorization: Bearer $YOUR_SIGNOZ_API_KEY"`} />
+
+            <h3>Available MCP tools</h3>
+            <p className="docp">
+              Once connected, your agent can use SigNoz MCP tools for observability workflows:
+            </p>
+            <ul className="docul">
+              <li className="docli">
+                <b>signoz_search_docs</b> — Search SigNoz documentation for guides and references.
+              </li>
+              <li className="docli">
+                <b>signoz_create_dashboard</b> — Create new dashboards with panels for GlassPay metrics.
+              </li>
+              <li className="docli">
+                <b>signoz_modify_dashboard</b> — Update existing dashboard panels and configurations.
+              </li>
+              <li className="docli">
+                <b>signoz_create_alert</b> — Set up alerts for error rate spikes, card issuance stalls, etc.
+              </li>
+              <li className="docli">
+                <b>signoz_investigate_alert</b> — Deep-dive into alert-triggered incidents with neighbor signals.
+              </li>
+              <li className="docli">
+                <b>signoz_generate_query</b> — Generate ClickHouse queries for GlassPay observability data.
+              </li>
+              <li className="docli">
+                <b>signoz_explain_dashboard</b> — Understand existing dashboard layouts and panel semantics.
+              </li>
+              <li className="docli">
+                <b>signoz_manage_views</b> — Create and manage saved views for quick data exploration.
+              </li>
+            </ul>
+
+            <p className="docp">
+              Example: ask your agent <i>&quot;Create a SigNoz dashboard for GlassPay showing cards issued, USDC spent,
+              and API error rate&quot;</i> — it will use the MCP tools to build the entire dashboard without you
+              touching the SigNoz UI.
+            </p>
+          </Section>
+
+          <Section id="signoz-alerts" title="Alerts & Self-Hosting">
+            <h3>Recommended alerts</h3>
+            <p className="docp">
+              Set up these alerts in SigNoz to monitor GlassPay health:
+            </p>
+            <Table
+              head={["Alert", "Condition", "Severity"]}
+              rows={[
+                ["High Error Rate", <><code key="a">glasspay_errors_total</code> rate &gt; 10/min for 5 min</>, "Critical"],
+                ["No Cards Issued", <><code key="a">glasspay_cards_issued_total</code> has no new value for 30 min</>, "Warning"],
+                ["High API Latency", <>P99 HTTP duration &gt; 5000ms for 5 min</>, "Warning"],
+                ["Refusal Spike", <>Log count with <code>refusal_reason:*</code> &gt; 20/min</>, "Warning"],
+                ["Charge Failure", <><code>charge_event:confirmed</code> rate drops by 50% vs previous hour</>, "Critical"],
+              ]}
+            />
+
+            <h3>Self-hosted SigNoz (local development)</h3>
+            <p className="docp">
+              The repo includes a <code>casting.yaml</code> for deploying SigNoz locally using Foundry. This is perfect
+              for development and testing without sending telemetry to the cloud.
+            </p>
+            <Code code={`# Deploy the full SigNoz stack:
+foundryctl cast -f casting.yaml --locked
+
+# SigNoz UI:    http://localhost:3301
+# OTLP HTTP:    http://localhost:4318
+# SigNoz MCP:   http://localhost:8000
+
+# Then set the server env:
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+OTEL_TRACES_EXPORTER=otlp
+OTEL_METRICS_EXPORTER=otlp
+OTEL_LOGS_EXPORTER=otlp`} />
+            <p className="docp">
+              The <code>casting.yaml.lock</code> pins every Docker image to its content digest, ensuring{" "}
+              <b>reproducible deployments</b>. Judges can run <code>foundryctl cast -f casting.yaml --locked</code> to
+              reproduce the exact SigNoz environment used during development.
+            </p>
+
+            <h3>Stack components</h3>
+            <Table
+              head={["Service", "Image", "Purpose"]}
+              rows={[
+                ["ClickHouse", <code key="c">clickhouse/clickhouse-server:24.12</code>, "Time-series database storing all traces, metrics, and logs"],
+                ["OTel Collector", <code key="c">signoz/signoz-otel-collector:0.119.3</code>, "Receives OTLP from GlassPay and writes to ClickHouse"],
+                ["Query Service", <code key="c">signoz/query-service:0.81.0</code>, "SigNoz backend: API for dashboards, alerts, and queries"],
+                ["Frontend", <code key="c">signoz/frontend:0.81.0</code>, "SigNoz Web UI at port 3301"],
+                ["MCP Server", <code key="c">signoz/mcp-server:latest</code>, "AI-agent observability: expose SigNoz tools to your agent"],
+              ]}
+            />
+
+            <Note>
+              The self-hosted stack requires <b>4 GB RAM</b>, <b>2 CPU cores</b>, and <b>20 GB disk</b> for ClickHouse
+              data. For production, use SigNoz Cloud at{" "}
+              <a href="https://signoz.io" target="_blank" rel="noreferrer">signoz.io</a> — the same OTLP exporter
+              configuration works with just a different endpoint and ingestion key.
+            </Note>
           </Section>
 
           {/* ---- API reference ---- */}

@@ -16,7 +16,7 @@
 import { trace } from "@opentelemetry/api";
 import { Hono } from "hono";
 import type { Address } from "viem";
-import { FEE_COLLECTOR, cardState, periodWindow, usdcToAtoms, type Store } from "@glasspay/engine";
+import { FEE_COLLECTOR, cardState, periodWindow, usdcToAtoms, usdcSpentTotal, emitChargeLog, type Store } from "@glasspay/engine";
 import type { AppDeps } from "../deps";
 import { recordFiatDecision } from "./decisions";
 
@@ -230,6 +230,9 @@ export function stripeRoutes(deps: AppDeps): Hono {
                   console.error(`[stripe] settlement kickoff failed for ${chargeId}: ${e instanceof Error ? e.message : String(e)}`);
                 });
               }, 0);
+            } else {
+              usdcSpentTotal.add(amountCents / 100);
+              emitChargeLog("confirmed", remitCardId, (amountCents / 100).toFixed(2), "fiat");
             }
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
