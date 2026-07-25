@@ -44,6 +44,6 @@ if (deps.fiatSettler) {
   setTimeout(runSweep, 5_000); // startup pass: crash recovery for rows orphaned mid-settle
 }
 
-console.log(`remit server listening on :${port}`);
+console.log(`glasspay server listening on :${port}`);
 
 export default { port, fetch: app.fetch, idleTimeout: 120 };

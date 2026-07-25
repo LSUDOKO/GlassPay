@@ -10,7 +10,7 @@ const display = Funnel_Display({ weight: ["500", "600"], subsets: ["latin"], var
 const sans = Sora({ weight: ["400", "500", "600"], subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
-  title: "remit · cards",
+  title: "GlassPay · cards",
   description: "the card issuer for agents",
 };
 
@@ -30,7 +30,7 @@ export const viewport: Viewport = {
 // seeds the first visit. Runs inline so dark mode never flashes light. Also
 // pins the theme-color meta (browser chrome tint) to the ACTIVE theme · the
 // toggle keeps it in sync afterwards.
-const themeInit = `(function(){var t="light";try{t=localStorage.getItem("remit-theme");if(t!=="dark"&&t!=="light"){t=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}}catch(e){t="light";}document.documentElement.dataset.theme=t;var m=document.querySelector('meta[name="theme-color"]');if(!m){m=document.createElement("meta");m.setAttribute("name","theme-color");document.head.appendChild(m);}m.setAttribute("content",t==="dark"?"#141417":"#f7f7f8");})();`;
+const themeInit = `(function(){var t="light";try{t=localStorage.getItem("glasspay-theme");if(t!=="dark"&&t!=="light"){t=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}}catch(e){t="light";}document.documentElement.dataset.theme=t;var m=document.querySelector('meta[name="theme-color"]');if(!m){m=document.createElement("meta");m.setAttribute("name","theme-color");document.head.appendChild(m);}m.setAttribute("content",t==="dark"?"#141417":"#f7f7f8");})();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

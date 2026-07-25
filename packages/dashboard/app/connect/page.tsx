@@ -84,7 +84,7 @@ function parseGrant(redirectTo: string, client: string | null): Granted {
   return { redirectTo, code, loopback, client };
 }
 
-const grantKey = (requestId: string) => `remit-grant-${requestId}`;
+const grantKey = (requestId: string) => `glasspay-grant-${requestId}`;
 
 function Consent() {
   const params = useSearchParams();
@@ -221,7 +221,7 @@ function Consent() {
   if (!authenticated) {
     return (
       <div className="panel" style={{ textAlign: "center", padding: 40 }}>
-        <h1>Connect an Agent to remit</h1>
+        <h1>Connect an Agent to GlassPay</h1>
         <p style={{ ...body, margin: "8px 0 18px" }}>
           An agent is asking for spending authority · sign in to pick which card it gets.
         </p>

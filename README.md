@@ -10,12 +10,12 @@ Built on MetaMask Smart Accounts (ERC-7710), settled gaslessly by 1Shot, pays th
 
 | Surface | URL |
 |---|---|
-| Dashboard (issue + manage cards · a fresh sign-in gets a guided welcome, funding step, and live tour) | https://remit.s0nderlabs.xyz |
-| Docs (the full reference, in-app) | https://remit.s0nderlabs.xyz/docs |
-| Demo merchant (accepts the cards' Visas) | https://shop.s0nderlabs.xyz |
-| API + MCP endpoint | https://remit-api.s0nderlabs.xyz |
-| Source (this repo) | https://github.com/s0nderlabs/remit |
-| Demo video | https://youtu.be/ymRo31OBZ8c |
+| Dashboard (issue + manage cards · a fresh sign-in gets a guided welcome, funding step, and live tour) | _deploy your own_ |
+| Docs (the full reference, in-app) | _deploy your own_ |
+| Demo merchant (accepts the cards' Visas) | _deploy your own_ |
+| API + MCP endpoint | _deploy your own_ |
+| Source (this repo) | https://github.com/LSUDOKO/GlassPay |
+| Demo video | [YouTube](https://youtu.be/ymRo31OBZ8c) |
 
 Everything runs on Base mainnet with real USDC; the only simulated leg is the Visa rail (Stripe test-mode Issuing, labeled honestly wherever it appears).
 

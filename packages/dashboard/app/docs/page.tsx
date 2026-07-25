@@ -178,9 +178,7 @@ export default function DocsPage() {
         <i className="docbeamC" />
       </div>
       <aside className="docnav">
-        <Link className="brand" href="/">
-          remit
-        </Link>
+        <Link className="brand" href="/">GlassPay</Link>
         <span className="docnavlabel">Documentation</span>
         <nav className="docnavlist">
           {NAV.map((g) => (
@@ -212,7 +210,7 @@ export default function DocsPage() {
             <span className="doceyebrow">The agentic card</span>
             <h1>Documentation</h1>
             <p className="docsub">
-              remit issues scoped, revocable spending cards from your wallet. Any agent plugs one in over MCP and
+              GlassPay issues scoped, revocable spending cards from your wallet. Any agent plugs one in over MCP and
               pays within your limits, holding no keys and no funds, dead the moment you revoke. Here is how it
               works, end to end.
             </p>
@@ -222,7 +220,7 @@ export default function DocsPage() {
           <Section id="overview" title="Overview">
             <p className="docp">
               Agents need to spend money. Handing an agent your private key is reckless; funding a standalone agent
-              wallet loses both your custody and your limits. remit takes the model the card industry settled on
+              wallet loses both your custody and your limits. GlassPay takes the model the card industry settled on
               decades ago and applies it to agents: the wallet stays the account, and the agent gets a <b>card</b>,
               a scoped authority to draw from it.
             </p>
@@ -254,7 +252,7 @@ export default function DocsPage() {
             </div>
 
             <p className="docp">
-              remit runs on <b>Base mainnet</b> with real USDC. The only simulated leg is the Visa rail (Stripe
+              GlassPay runs on <b>Base mainnet</b> with real USDC. The only simulated leg is the Visa rail (Stripe
               test-mode Issuing), labeled honestly wherever it appears.
             </p>
 
@@ -418,7 +416,7 @@ export default function DocsPage() {
                   Works everywhere, including credential-free clients like claude.ai web. The URL is the password,
                   treat it like one.
                 </p>
-                <Code code={`claude mcp add --transport http remit \\
+                <Code code={`claude mcp add --transport http glasspay \\
   https://<host>/c/<card-secret>/mcp`} />
               </div>
               <div className="doclane">
@@ -427,7 +425,7 @@ export default function DocsPage() {
                   <span className="lt">Bearer header</span>
                 </div>
                 <p>For clients that send an Authorization header. The bare endpoint, secret in the header.</p>
-                <Code code={`claude mcp add --transport http remit \\
+                <Code code={`claude mcp add --transport http glasspay \\
   https://<host>/mcp \\
   --header "Authorization: Bearer <card-secret>"`} />
               </div>
@@ -442,21 +440,21 @@ export default function DocsPage() {
                   which card to grant. The agent receives a short-lived, card-scoped, independently revocable token,
                   never the raw secret. This is the lane OAuth-only clients such as ChatGPT require. Clients that
                   finish OAuth out of band read the code off the consent screen: OpenClaw completes with{" "}
-                  <code>openclaw mcp login remit --code &lt;code&gt;</code>, and headless Hermes uses the same
+                  <code>openclaw mcp login glasspay --code &lt;code&gt;</code>, and headless Hermes uses the same
                   paste-back.
                 </p>
-                <Code code={`claude mcp add --transport http remit https://<host>/mcp`} />
+                <Code code={`claude mcp add --transport http glasspay https://<host>/mcp`} />
               </div>
             </div>
 
             <h3>Per-harness one-liners (Lane A)</h3>
-            <Code code={`codex     mcp add remit --url https://<host>/c/<secret>/mcp
-openclaw  mcp add remit --url https://<host>/c/<secret>/mcp --transport streamable-http  # flag required: omitting it defaults to SSE
-hermes    mcp add remit --url "https://<host>/c/<secret>/mcp"
-gemini    mcp add -t http remit https://<host>/c/<secret>/mcp
+            <Code code={`codex     mcp add glasspay --url https://<host>/c/<secret>/mcp
+openclaw  mcp add glasspay --url https://<host>/c/<secret>/mcp --transport streamable-http  # flag required: omitting it defaults to SSE
+hermes    mcp add glasspay --url "https://<host>/c/<secret>/mcp"
+gemini    mcp add -t http glasspay https://<host>/c/<secret>/mcp
 goose     session --with-streamable-http-extension "https://<host>/c/<secret>/mcp"
-amp       mcp add remit https://<host>/c/<secret>/mcp
-droid     mcp add remit https://<host>/c/<secret>/mcp --type http`} />
+amp       mcp add glasspay https://<host>/c/<secret>/mcp
+droid     mcp add glasspay https://<host>/c/<secret>/mcp --type http`} />
             <p className="docp">
               Lanes A and B work in Cursor, VS Code, Gemini CLI, Windsurf, claude.ai custom connectors, or any MCP
               client that speaks Streamable HTTP. For claude.ai web, paste the card URL under Customize → Connectors →
@@ -591,7 +589,7 @@ droid     mcp add remit https://<host>/c/<secret>/mcp --type http`} />
             <p className="docp">
               <code>paid_fetch</code> answers an HTTP 402 challenge by paying through the card&apos;s 7710 delegation:
               real x402 v2 flows on Base mainnet, USDC settled from your wallet through the 1Shot Public Relayer
-              (gasless, fee in USDC). remit also ships the first ERC-7710 x402 facilitator
+              (gasless, fee in USDC). GlassPay also ships the first ERC-7710 x402 facilitator
               (<code>/facilitator/verify</code>, <code>/settle</code>, <code>/supported</code> advertising{" "}
               <code>assetTransferMethod: erc7710</code>) and a demo seller at <code>/demo/premium-data</code> whose 402
               points back at it.
@@ -599,7 +597,7 @@ droid     mcp add remit https://<host>/c/<secret>/mcp --type http`} />
             <h3>Stripe Issuing Visa (simulated)</h3>
             <p className="docp">
               <code>fiat_pay</code> and <code>card_credentials</code> drive a test-mode virtual Visa. When a charge is
-              authorized, Stripe calls remit&apos;s real-time auth webhook, which answers approve/decline from the
+              authorized, Stripe calls GlassPay&apos;s real-time auth webhook, which answers approve/decline from the
               card&apos;s on-chain delegation state inside Stripe&apos;s hard 2-second window (read from a cached
               snapshot, never an RPC call in the handler). A decline comes back typed, from the card&apos;s terms, not
               the merchant.
@@ -627,8 +625,7 @@ droid     mcp add remit https://<host>/c/<secret>/mcp --type http`} />
               <li className="docli">
                 <b>Custody.</b> Your funds stay in your wallet. The per-card agent key signs redelegations only; it
                 holds no assets and is encrypted at rest. You can export your wallet&apos;s private key from the
-                account menu at any time (through Privy&apos;s secure modal, rendered in a separate-domain iframe remit
-                never reads) and walk away to any client.
+                account menu at any time (through Privy&apos;s secure modal, rendered in a separate-domainiframe GlassPay never reads) and walk away to any client.
               </li>
               <li className="docli">
                 <b>Dashboard auth.</b> Per-user Privy sessions, verified server-side against the app JWKS. At onboard,
@@ -762,7 +759,7 @@ bun run --cwd packages/dashboard dev   # dashboard on :4071`} />
                 [<code key="e">VENICE_API_KEY · VENICE_MODEL</code>, "Enables /cards/compile; pin the model id"],
                 [<code key="e">GLASSPAY_DASHBOARD_BASE</code>, "Dashboard origin hosting the OAuth consent page"],
                 [<code key="e">GLASSPAY_RPC_URL · NEXT_PUBLIC_BASE_RPC</code>, "Base RPC for server + client reads (default mainnet.base.org)"],
-                [<code key="e">GLASSPAY_DB_PATH</code>, "SQLite path (default .dev/remit.sqlite)"],
+                [<code key="e">GLASSPAY_DB_PATH</code>, "SQLite path (default .dev/glasspay.sqlite)"],
                 [<code key="e">GLASSPAY_ALLOWED_HOSTS</code>, "Extra Host headers accepted on the MCP endpoint (e.g. a platform fallback domain)"],
                 [<code key="e">BASESCAN_API_KEY</code>, "Verified-contract labels from Basescan when resolving compiled drafts"],
                 [<code key="e">GLASSPAY_TRUST_PROXY_HOPS</code>, "Trusted proxy hops for client-IP rate limiting (default 1 = Railway edge)"],
@@ -785,12 +782,12 @@ bun run --cwd packages/dashboard dev   # dashboard on :4071`} />
           {/* ---- Cook Off ---- */}
           <Section id="cookoff" title="The Cook Off">
             <p className="docp">
-              remit was built for the MetaMask Smart Accounts Kit × 1Shot API × Venice AI Dev Cook Off. The hard gate,
+              GlassPay was built for the MetaMask Smart Accounts Kit × 1Shot API × Venice AI Dev Cook Off. The hard gate,
               Smart Accounts Kit in the main flow, is the product itself: every card is a SAK delegation, signed by a
               Privy-provisioned embedded smart account, and every spend redeems it on-chain.
             </p>
             <Table
-              head={["Track", "What remit does"]}
+              head={["Track", "What GlassPay does"]}
               rows={[
                 ["x402 + ERC-7710", "paid_fetch pays HTTP 402 through the card's 7710 delegation; real x402 v2 on Base mainnet"],
                 ["Best Agent experience", "One URL is the whole integration; typed refusals; an OAuth lane for consent UX"],
@@ -800,7 +797,7 @@ bun run --cwd packages/dashboard dev   # dashboard on :4071`} />
               ]}
             />
             <Note>
-              remit uses programmatic <b>ERC-7710 Delegations</b>, not ERC-7715 Advanced Permissions: the 7710 caveat
+              GlassPay uses programmatic <b>ERC-7710 Delegations</b>, not ERC-7715 Advanced Permissions: the 7710 caveat
               set is richer than the 7715 grant catalog allows, so there is no{" "}
               <code>wallet_requestExecutionPermissions</code> path.
             </Note>

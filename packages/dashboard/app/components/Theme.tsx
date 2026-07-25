@@ -28,7 +28,7 @@ export function ThemeToggle() {
       // script created this meta; layout.tsx deliberately ships none)
       document.querySelector('meta[name="theme-color"]')?.setAttribute("content", next === "dark" ? "#141417" : "#f7f7f8");
       try {
-        localStorage.setItem("remit-theme", next);
+        localStorage.setItem("glasspay-theme", next);
       } catch {}
       setTheme(next);
     };

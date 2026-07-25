@@ -1,4 +1,4 @@
-// Chain + relayer constants for remit. Base mainnet (8453) is THE chain (locked);
+// Chain + relayer constants for GlassPay. Base mainnet (8453) is THE chain (locked);
 // Base Sepolia kept for dev-only experiments, never the demo.
 // All values empirically verified Jun 5-6 2026 (probes/RESULTS.md).
 
@@ -38,9 +38,9 @@ export const LOGICAL_OR_WRAPPER = "0xE1302607a3251AF54c3a6e69318d6aa07F5eB46c" a
 export const SWAP_ROUTER_02 = "0x2626664c2603336E57B271c5C0b26F421741e481" as Address;
 export const WETH = "0x4200000000000000000000000000000000000006" as Address;
 
-// RPC: GLASSPAY_RPC_URL (Alchemy in dev/prod) with public fallback.
+// RPC: glasspay_RPC_URL (Alchemy in dev/prod) with public fallback.
 export function rpcUrl(chainId: ChainId = CHAIN_ID): string {
-  if (chainId === CHAIN_ID && process.env.GLASSPAY_RPC_URL) return process.env.GLASSPAY_RPC_URL;
+  if (chainId === CHAIN_ID && process.env.glasspay_RPC_URL) return process.env.glasspay_RPC_URL;
   return chainId === 8453 ? "https://mainnet.base.org" : "https://sepolia.base.org";
 }
 

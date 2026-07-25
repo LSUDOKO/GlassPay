@@ -1,6 +1,6 @@
 // Public, client-safe constants + a read-only Base mainnet client. The Privy App ID
 // and Client ID are PUBLIC client credentials (never the app secret). Base mainnet
-// (8453) is THE chain (locked). Defaults match the live "remit" Privy app.
+// (8453) is THE chain (locked). Defaults match the live "GlassPay" Privy app.
 
 import { createPublicClient, http, type Address } from "viem";
 import { base } from "viem/chains";

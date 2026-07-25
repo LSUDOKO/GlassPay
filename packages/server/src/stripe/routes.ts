@@ -19,7 +19,6 @@ import type { Address } from "viem";
 import { FEE_COLLECTOR, cardState, periodWindow, usdcToAtoms, type Store } from "@glasspay/engine";
 import type { AppDeps } from "../deps";
 import { recordFiatDecision } from "./decisions";
-import { startStripeWebhookSpan, endStripeWebhookSpan, recordStripeWebhookError } from "../instrumentation";
 
 const tracer = trace.getTracer("glasspay-server");
 

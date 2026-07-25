@@ -7,8 +7,6 @@ import { trace } from "@opentelemetry/api";
 
 const tracer = trace.getTracer("glasspay-server");
 
-import { startVeniceSpan, endVeniceSpan, addVeniceTokenCounts, recordVeniceError } from "../instrumentation";
-
 export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
 /** The injectable brain: NL messages in, raw assistant text out. Tests pass a fake. */

@@ -424,7 +424,7 @@ describe("transport fingerprints", () => {
         const res = await rpc(target, initBody(version), headers);
         expect(res.status).toBe(200);
         const msg = await rpcResult(res);
-        expect(msg.result.serverInfo.name).toBe("remit");
+        expect(msg.result.serverInfo.name).toBe("glasspay");
         expect(typeof msg.result.protocolVersion).toBe("string");
         // Claude Code tool search keys on instructions; cap is 2KB
         expect(typeof msg.result.instructions).toBe("string");

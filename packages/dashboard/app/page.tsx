@@ -374,7 +374,7 @@ function Dashboard({
   // then the wallet address + live USDC readout) replaces the old hard-gated
   // composer. Seen-state is per wallet; skipping lands on the empty deck,
   // which carries its own Issue CTA.
-  const frKey = `remit-firstrun-${address.toLowerCase()}`;
+  const frKey = `glasspay-firstrun-${address.toLowerCase()}`;
   const [tourDone, setTourDone] = useState(true); // assume seen until storage answers
   useEffect(() => {
     setTourDone(localStorage.getItem(frKey) === "1");
@@ -794,7 +794,7 @@ function IssueModal({
             {/* a card being born */}
             <div className="born">
               <div className={`minicard${filled ? " fill" : ""}`}>
-                <div className="mc-mark">remit</div>
+                <div className="mc-mark">glasspay</div>
                 <div className="mc-chip">
                   <ChipDots />
                 </div>
