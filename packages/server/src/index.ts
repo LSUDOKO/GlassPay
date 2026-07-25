@@ -4,6 +4,7 @@
 //   facilitator.remit.s0nderlabs.xyz -> erc7710 x402 facilitator (verify/settle/supported) + demo seller
 // Facilitator routes use fetch + WebCrypto ONLY (portability rule: 20-min Workers escape hatch).
 
+import { trace } from "@opentelemetry/api";
 import { reconcilePending } from "@glasspay/engine";
 import { createApp } from "./app";
 import { envInt, realDeps } from "./deps";
@@ -11,18 +12,25 @@ import { envInt, realDeps } from "./deps";
 const deps = realDeps();
 const app = createApp(deps);
 const port = envInt("PORT", 4070);
+const otel = trace.getTracer("glasspay-server");
 
 // Reconcile sweep: charges left "pending" (confirm timed out) hold budget until
 // settled. Re-check them against chain logs periodically. 0 disables (tests).
 const reconcileMs = envInt("GLASSPAY_RECONCILE_INTERVAL_MS", 300_000);
 if (reconcileMs > 0) {
   setInterval(() => {
-    reconcilePending({ store: deps.store, relayer: deps.relayer }).then(
-      (r) => {
+    otel.startActiveSpan("reconcile_sweep", async (span) => {
+      try {
+        const r = await reconcilePending({ store: deps.store, relayer: deps.relayer });
+        span.setAttribute("reconciled", r.reconciled);
+        span.setAttribute("still_pending", r.stillPending);
         if (r.reconciled) console.log(`[reconcile] settled ${r.reconciled} stuck charge(s)`);
-      },
-      () => {}, // sweep errors are non-fatal; next tick retries
-    );
+      } catch (e) {
+        span.recordException(e as Error);
+      } finally {
+        span.end();
+      }
+    });
   }, reconcileMs);
 } else {
   console.log("[reconcile] sweep DISABLED (GLASSPAY_RECONCILE_INTERVAL_MS=0): stuck pending charges will hold budget");
@@ -33,12 +41,18 @@ if (reconcileMs > 0) {
 if (deps.fiatSettler) {
   const settler = deps.fiatSettler;
   const runSweep = () =>
-    settler.sweep().then(
-      (r) => {
+    otel.startActiveSpan("fiat_settle_sweep", async (span) => {
+      try {
+        const r = await settler.sweep();
+        span.setAttribute("settled", r.settled);
+        span.setAttribute("left", r.left);
         if (r.settled) console.log(`[settle] sweep settled ${r.settled} fiat charge(s) (${r.left} left)`);
-      },
-      () => {}, // sweep errors are non-fatal; next tick retries
-    );
+      } catch (e) {
+        span.recordException(e as Error);
+      } finally {
+        span.end();
+      }
+    });
   const settleMs = envInt("GLASSPAY_FIAT_SETTLE_INTERVAL_MS", 60_000);
   if (settleMs > 0) setInterval(runSweep, settleMs);
   setTimeout(runSweep, 5_000); // startup pass: crash recovery for rows orphaned mid-settle

@@ -29,7 +29,7 @@ import {
 } from "./delegations";
 import { EngineError, RefusalError } from "./errors";
 import { atomsToUsdc, parseAtoms, usdcToAtoms } from "./money";
-import { emitRefusalLog, usdcSpentTotal } from "./telemetry";
+import { emitRefusalLog, emitChargeLog, usdcSpentTotal, chargesTotal } from "./telemetry";
 import { Relayer } from "./relayer";
 import { periodWindow, type CardRow, type ChargeKind, type ChargeRow, type Store } from "./store";
 import type { CardState, Receipt, Wire7702Auth, WireDelegation, WireExecution } from "./types";
@@ -648,6 +648,8 @@ export async function spend(deps: SpendDeps, cardId: string, req: SpendRequest):
     if (confirmation.status === "confirmed") {
       store.updateCharge(chargeId, { status: "confirmed", tx_hash: confirmation.txHash ?? undefined });
       usdcSpentTotal.add(Number(atomsToUsdc(amountAtoms)));
+      chargesTotal.add(1);
+      emitChargeLog("confirmed", cardId, atomsToUsdc(amountAtoms), req.kind);
       return receiptFromCharge(deps, cardId, "confirmed", confirmation.txHash, req.to ?? FEE_COLLECTOR, amountAtoms, feeAtoms, now, req.memo);
     }
     if (confirmation.status === "failed") {

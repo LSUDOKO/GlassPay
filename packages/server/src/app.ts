@@ -5,6 +5,7 @@
 
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { trace, SpanStatusCode } from "@opentelemetry/api";
 import { ENGINE_VERSION } from "@glasspay/engine";
 import type { AppDeps } from "./deps";
 import { mcpRoutes } from "./mcp/routes";
@@ -18,6 +19,27 @@ import { shopRoutes } from "./shop/routes";
 
 export function createApp(deps: AppDeps): Hono {
   const app = new Hono();
+  const otel = trace.getTracer("glasspay-server");
+
+  // OpenTelemetry middleware: wraps every request in a span with route pattern,
+  // method, status code, and auth info. Visible in SigNoz traces.
+  app.use("*", async (c, next) => {
+    const span = otel.startSpan(`HTTP ${c.req.method} ${c.req.routePath ?? c.req.path}`);
+    span.setAttribute("http.method", c.req.method);
+    span.setAttribute("http.url", c.req.path);
+    span.setAttribute("http.route", c.req.routePath ?? c.req.path);
+    try {
+      await next();
+    } catch (e) {
+      span.recordException(e as Error);
+      span.setStatus({ code: SpanStatusCode.ERROR, message: e instanceof Error ? e.message : String(e) });
+      throw e;
+    } finally {
+      span.setAttribute("http.status_code", c.res.status);
+      span.end();
+    }
+  });
+
   // OAuth lane storage rides the same sqlite database as the engine store
   const oauth = new OAuthStore(deps.store.db);
 

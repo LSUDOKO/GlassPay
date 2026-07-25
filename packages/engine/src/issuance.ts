@@ -27,7 +27,7 @@ import {
 } from "./delegations";
 import { EngineError, RefusalError } from "./errors";
 import { usdcToAtoms } from "./money";
-import { activeCards } from "./telemetry";
+import { activeCards, cardsIssuedTotal, emitCardLog } from "./telemetry";
 import { periodWindow, type CardRow, type Store } from "./store";
 import type { CardTerms, CompiledCard, WireDelegation } from "./types";
 
@@ -102,6 +102,8 @@ export async function issueRootCard(
     created_at: now,
   });
   activeCards.add(1);
+  cardsIssuedTotal.add(1);
+  emitCardLog("issued", cardId, { name: args.name, kind: compiled.kind, user_id: args.userId });
 
   return { cardId, secret, kAgentAddress, terms: compiled.terms };
 }
@@ -217,6 +219,8 @@ export async function finalizeRootCard(
     created_at: prepared.createdAt,
   });
   activeCards.add(1);
+  cardsIssuedTotal.add(1);
+  emitCardLog("issued", prepared.cardId, { name: prepared.name, kind: prepared.compiled.kind, user_id: prepared.userId });
   return {
     cardId: prepared.cardId,
     secret: prepared.secret,
@@ -286,6 +290,8 @@ export async function issueSubCard(
     created_at: now,
   });
   activeCards.add(1);
+  cardsIssuedTotal.add(1);
+  emitCardLog("subcard_issued", cardId, { name: args.name, parent_id: args.parentCardId });
 
   return { cardId, secret, kAgentAddress: kSubAddress, terms: childTerms };
 }

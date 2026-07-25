@@ -31,7 +31,7 @@ import {
 import { EngineError, RefusalError } from "./errors";
 import { parseAtoms, usdcToAtoms } from "./money";
 import { readRevocationNonce } from "./issuance";
-import { activeCards } from "./telemetry";
+import { activeCards, emitCardLog } from "./telemetry";
 import type { Relayer } from "./relayer";
 import type { Store } from "./store";
 import type { Wire7702Auth, WireDelegation, WireExecution } from "./types";
@@ -63,6 +63,7 @@ export function freezeCard(store: Store, cardId: string): void {
   if (!card) throw new RefusalError("card_not_found", "no such card");
   if (card.status !== "active") throw new RefusalError("card_revoked", `card is ${card.status}, cannot freeze`);
   store.setCardStatus(cardId, "frozen");
+  emitCardLog("frozen", cardId);
 }
 
 export function unfreezeCard(store: Store, cardId: string): void {
@@ -70,6 +71,7 @@ export function unfreezeCard(store: Store, cardId: string): void {
   if (!card) throw new RefusalError("card_not_found", "no such card");
   if (card.status !== "frozen") throw new RefusalError("invalid_terms", `card is ${card.status}, not frozen`);
   store.setCardStatus(cardId, "active");
+  emitCardLog("unfrozen", cardId);
 }
 
 /** Hard-delete a DEAD card (and its whole subtree) from the books. Pure bookkeeping:
@@ -254,6 +256,7 @@ export async function revokeCard(deps: OpsDeps, cardId: string): Promise<AdminOp
   store.setSubtreeStatus(cardId, "revoked");
   const subtreeCount = 1 + store.subtreeIds(cardId).length;
   activeCards.add(-subtreeCount);
+  emitCardLog("revoked", cardId, { subtree_size: subtreeCount });
   return result;
 }
 
@@ -286,6 +289,7 @@ export async function nukeAll(deps: OpsDeps, userId: string): Promise<AdminOpRes
     }
   }
   deps.store.setRevocationNonce(userId, newNonce);
+  emitCardLog("nuked", userId, { cards_nuked: nukedCards });
   return { ...result, newNonce };
 }
 
