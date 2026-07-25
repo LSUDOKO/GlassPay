@@ -49,7 +49,7 @@ export default function ShopPage() {
     })();
   }, []);
 
-  // keep the browser tab in character (root layout titles the remit dashboard)
+  // keep the browser tab in character (root layout titles the glasspay dashboard)
   useEffect(() => {
     document.title = catalog?.merchant ?? "s0nder supply co.";
   }, [catalog]);
@@ -227,8 +227,8 @@ export default function ShopPage() {
 
         <p className={s.foot}>
           A demo storefront. It accepts Visa cards issued by{" "}
-          <a href="https://remit.s0nderlabs.xyz" target="_blank" rel="noreferrer">
-            remit
+          <a href="/" target="_blank" rel="noreferrer">
+            GlassPay
           </a>{" "}
           in Stripe test mode; every charge authorizes in real time against the card&apos;s on-chain budget, and
           approved charges settle as real USDC transfers on Base.

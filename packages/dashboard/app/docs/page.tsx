@@ -177,9 +177,8 @@ export default function DocsPage() {
         <i className="docbeamB" />
         <i className="docbeamC" />
       </div>
-      <aside className="docnav">
-        <Link className="brand" href="/">GlassPay</Link>
-        <span className="docnavlabel">Documentation</span>
+      <aside className="docnav">              <Link className="brand" href="/">GlassPay</Link>
+              <span className="docnavlabel">Documentation</span>
         <nav className="docnavlist">
           {NAV.map((g) => (
             <Fragment key={g.group}>
@@ -260,17 +259,13 @@ export default function DocsPage() {
               <div className="docfact">
                 <div className="fk">Dashboard</div>
                 <div className="fv">
-                  <a href="https://remit.s0nderlabs.xyz" target="_blank" rel="noreferrer">
-                    remit.s0nderlabs.xyz
-                  </a>
+                  <span>glasspay (your deployment)</span>
                 </div>
               </div>
               <div className="docfact">
                 <div className="fk">API + MCP</div>
                 <div className="fv">
-                  <a href="https://remit-api.s0nderlabs.xyz" target="_blank" rel="noreferrer">
-                    remit-api.s0nderlabs.xyz
-                  </a>
+                  <span>glasspay-api (your deployment)</span>
                 </div>
               </div>
               <div className="docfact">

@@ -50,7 +50,7 @@ export function Cockpit({
     <div className="app">
       <aside className="rail">
         <Link className="brand" href="/">
-          remit
+          GlassPay
         </Link>
         {back && (
           <Link className="railback" href={back.href} title={back.label} aria-label={back.label}>
@@ -271,7 +271,7 @@ function ProfileMenu({
                       >
                         Export Private Key
                       </button>
-                      <p className="pronote">Reveals your key in Privy&apos;s secure window to import elsewhere. remit never sees it.</p>
+                      <p className="pronote">Reveals your key in Privy&apos;s secure window to import elsewhere. GlassPay never sees it.</p>
                     </div>
                   )}
                   {onLogout && (

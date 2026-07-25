@@ -24,7 +24,7 @@ export function Login({ onLogin }: { onLogin: () => void }) {
 
       <section className={s.type}>
         <h1 className={`rv ${s.wm}`} style={{ animationDelay: ".05s" }}>
-          remit
+          GlassPay
         </h1>
         <p className={`rv ${s.tag}`} style={{ animationDelay: ".13s" }}>
           Authority, lent not given.
@@ -52,7 +52,7 @@ export function Login({ onLogin }: { onLogin: () => void }) {
               </div>
               <div className="inner">
                 <div className="row1">
-                  <span className="wm">remit</span>
+                  <span className="wm">glasspay</span>
                 </div>
                 <ChipDots />
                 <div className="num">

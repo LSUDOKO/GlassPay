@@ -86,7 +86,7 @@ export function CardHero({
             </div>
             <div className="inner">
               <div className="row1">
-                <span className="wm">remit</span>
+                <span className="wm">glasspay</span>
                 {frozen && (
                   <span className="ctag frozen">
                     <IconSnowflake size={10} />
@@ -134,7 +134,7 @@ export function CardHero({
                     : "No secrets on this card · connecting an agent reveals the credential."}
               </p>
               <div className="bfoot">
-                <span className="bwm">remit</span>
+                <span className="bwm">glasspay</span>
                 <span className="bnote">Authority, lent not given.</span>
               </div>
             </div>
