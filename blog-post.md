@@ -1,198 +1,357 @@
-# I Gave an AI Agent Its Own Credit Card, Then Instrumented Everything With OpenTelemetry and SigNoz
+# I Gave an AI Agent a Credit Card, Then Watched Every Move It Made With SigNoz
 
-Two months ago I was staring at a Stripe webhook that had 2 seconds to reply — and I had no idea why it kept timing out. The webhook was authorizing Visa transactions for an AI agent that spends money on behalf of users. When it failed, the agent's payment got declined at the POS terminal. The user saw "card declined" on their phone. The agent saw nothing. And my logs were useless: just "timeout" with zero context about which hop in the pipeline had stalled.
+**The moment I realized I had no observability:** A user's AI agent tried to buy $50 worth of API credits. The Stripe webhook got the authorization request, had 2 seconds to reply, and timed out. The POS terminal declined. The agent saw a cryptic `isError: true` response. The user saw "card declined" on their phone. I saw a log line that just said "timeout" — zero information about which of the five sequential hops between "agent wants to spend" and "money moves" had stalled.
 
-This is the story of how I fixed that by wiring the whole thing — every HTTP call, every on-chain settlement, every LLM prompt — to a self-hosted SigNoz instance. Along the way I learned that observability for agentic systems is not the same as observability for normal web apps.
+I had built an agentic spending card platform — GlassPay — where users hand a card URL to an AI agent and the agent spends money within programmable limits. And I couldn't tell anyone *why* their card was declined.
 
-## What We Built
+This is how I instrumented the whole thing with OpenTelemetry and SigNoz: traces that span HTTP calls, on-chain settlements, and LLM prompts; metrics that track real money; and structured logs that let me click from a failure straight into its correlated trace. Along the way I learned that **observability for agentic systems isn't the same as observability for normal web apps**, and that the hardest part isn't setting up the pipeline — it's knowing what to instrument once the pipeline is running.
 
-GlassPay is an "agentic spending card" platform. The idea: you create a card, set spending rules in plain English ("$500/week on SaaS tools, nothing on weekends"), and hand the card URL to an AI agent. The agent spends money through the card — it pays APIs, buys compute, settles subscriptions — and the smart contract enforces your budget on-chain.
+---
 
-The stack is a Hono TypeScript server with a smart contract engine that compiles natural-language rules into on-chain delegation policies. Three critical external hops sit between "agent wants to spend $20" and "the money moves":
+## The System: Three External Hops, One 2-Second Deadline
 
-1. **Venice AI** — turns natural language intent into structured card terms (it's an LLM call)
-2. **Stripe Issuing** — authorizes the fiat Visa transaction (2-second hard deadline)
-3. **1Shot relayer** — settles the corresponding USDC on-chain
+GlassPay is a Hono TypeScript server with a smart contract engine that turns plain-language rules into on-chain delegation policies. The full flow from "agent wants to spend" to "money moves" crosses three completely separate systems:
 
-Each of these can fail in different ways, and failures compound because they're sequential. If the relayer is slow, the Stripe auth still succeeds — now you have a fiat charge with no corresponding USDC settlement. That's a reconciliation problem that's worse than a timeout.
+1. **Venice AI** — turns natural language intent (`"$5/week for research APIs"`) into structured card terms
+2. **Stripe Issuing** — authorizes the Visa transaction with a **hard 2-second deadline**
+3. **1Shot Relayer** — settles the USDC on-chain gaslessly through the DelegationManager contract
 
-## The Problem With Normal Logging
+Each can fail independently, and failures compound because they're sequential. If the relayer is slow, the Stripe auth still succeeds — now you have a Visa charge with no corresponding on-chain settlement. That's a reconciliation problem orders of magnitude worse than a timeout.
 
-Before OTel, we had `console.log` statements and a JSON file. Every time an agent got a "card declined" response, I'd ssh into the box, grep the logs for that card ID, and try to piece together the timeline manually. Was the LLM slow? Was the Stripe webhook slow? Did the relayer fail silently?
+Before OTel, debugging looked like: SSH in, grep logs for the card ID, find a bare "timeout" message, guess which hop, add more logging, wait for it to happen again. I needed correlated data that tells a story, not isolated lines.
 
-I couldn't answer any of those questions from logs alone. Logs tell you *what* happened at a single point. They don't tell you *how long* things took, or *which path* a request took through the system. And they certainly don't correlate across services: the Venice AI call, the Stripe webhook, and the on-chain relayer are three completely separate systems.
+---
 
-## Where OTel Comes In
+## Setting Up the OTel Pipeline
 
-We installed `@opentelemetry/sdk-node` with `getNodeAutoInstrumentations` and exported everything via OTLP/HTTP to SigNoz. The SDK is initialized via Bun's `--preload` flag so it starts before any application code loads:
+The trickiest part was initialization order. Bun loads modules eagerly, and if OTel SDK initialization happens *after* the Hono app imports, the auto-instrumentation misses the route registration. The fix is Bun's `--preload` flag:
 
 ```typescript
-// otel.ts — loaded via bun --preload ./src/otel.ts
+// packages/server/src/otel.ts — loaded via `bun --preload ./src/otel.ts`
+import { NodeSDK } from "@opentelemetry/sdk-node";
+import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
+import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
+import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
+
 const sdk = new NodeSDK({
   serviceName: "glasspay-server",
+  traceExporter: new OTLPTraceExporter(),
+  metricReader: new PeriodicExportingMetricReader({
+    exporter: new OTLPMetricExporter(),
+    exportIntervalMillis: 10_000,
+  }),
+  logRecordProcessor: new BatchLogRecordProcessor(new OTLPLogExporter()),
   instrumentations: [getNodeAutoInstrumentations({
     "@opentelemetry/instrumentation-dns": { enabled: false },
     "@opentelemetry/instrumentation-fs": { enabled: false },
   })],
 });
+process.on("SIGTERM", () => sdk.shutdown());
 await sdk.start();
 ```
 
-The `--preload` trick was something I figured out after the first attempt failed. If you import OTel *after* Hono, the auto-instrumentation misses the Hono routes because they're already registered. Bun runs the preload file before anything else in the bundle, so the SDK wraps every HTTP handler from the start.
-
-### Tracing the Three Critical Hops
-
-We added three custom spans, one for each SLA boundary:
-
-```
-stripe_webhook_auth  —  Stripe sends us an auth request; we must reply in <2s
-1shot_relayer_redeem —  Sends the USDC relayer tx; can fail if gas is too low
-venice_nl_compile    —  Calls Venice AI chat completions; token usage matters
-```
-
-The Stripe span turned out to be the most valuable one. The 2-second deadline means if this span shows up as >1800ms, we know the authorization will fail before Stripe even tells us. Here's what it looks like in practice:
-
-```typescript
-// stripe/routes.ts — the webhook handler
-const tracer = trace.getTracer("glasspay-server");
-const span = tracer.startSpan("stripe_webhook_auth", {
-  attributes: {
-    "stripe.charge_id": chargeId,
-    "card_id": cardId,
-    "latency_critical": true,
-  },
-});
-try {
-  const result = await handleAuthorization(charge);
-  span.setStatus({ code: SpanStatusCode.OK });
-  return result;
-} catch (e) {
-  span.recordException(e);
-  span.setStatus({ code: SpanStatusCode.ERROR });
-  throw e;
-} finally {
-  span.end();
-}
-```
-
-Before this span I would see `ETIMEDOUT` in the Stripe dashboard with zero server-side context. Now in SigNoz I can click on a failed trace, see that the Stripe span took 1950ms, and know the bottleneck was in the DB query right before the response — not in the Stripe API itself.
-
-### Metrics: Five Counters for a Financial Health Dashboard
-
-We emit five custom metrics from the engine package:
-
-```typescript
-const meter = metrics.getMeter("glasspay-engine");
-
-export const usdcSpentTotal = meter.createCounter("glasspay.usdc_spent_total");
-export const activeCards = meter.createUpDownCounter("glasspay.active_cards");
-export const cardsIssuedTotal = meter.createCounter("glasspay.cards_issued_total");
-export const errorsTotal = meter.createCounter("glasspay.errors_total");
-export const chargesTotal = meter.createCounter("glasspay.charges_total");
-```
-
-A gotcha I hit: **metric names with dots vs underscores**. ClickHouse (SigNoz's storage) stores metric names as strings. If you query `signoz_metrics.distributed_samples_v2` and filter by `metric_name = 'glasspay.usdc_spent_total'`, the dot is just a character — no special treatment. But if you accidentally name a metric `glasspay_usdc_spent_total` in one place and query for `glasspay.usdc_spent_total` in the dashboard, you get zero results and it looks like the app is broken. I wasted an hour on this.
-
-The dashboard panels are raw SQL against ClickHouse:
-
-```sql
-SELECT toStartOfInterval(toDateTime(intDiv(timestamp, 1000000000)), INTERVAL 5 MINUTE) AS ts,
-       sum(value) AS usdc
-FROM signoz_metrics.distributed_samples_v2
-WHERE metric_name = 'glasspay.usdc_spent_total'
-  AND temporality = 'Cumulative'
-  AND ts BETWEEN $start_datetime AND $end_datetime
-GROUP BY ts ORDER BY ts
-```
-
-This runs in a SigNoz dashboard panel called "USDC Spent Over Time." I can see spikes when a particular agent is running heavy workloads, dips on weekends (most agents are configured to not spend on weekends), and flatline at zero when something is broken.
-
-### Structured Logs: What Normal Logging Should Always Be
-
-The most useful thing we did was log every time the engine refuses a spend. An AI agent tries to buy something, the smart contract says "nope — you've hit your $500/week limit on SaaS," and we emit:
-
-```json
-{
-  "severityText": "WARN",
-  "severityNumber": 13,
-  "body": "Refusal: over_period_limit for card 550e8400-e29b-...",
-  "attributes": {
-    "card_id": "550e8400-e29b-...",
-    "refusal_reason": "over_period_limit",
-    "attempted_amount": "50.00"
-  }
-}
-```
-
-There are 17 refusal points in `spend.ts`. Each one emits a log before throwing the error. In SigNoz Logs Explorer I have a saved view called "Last 50 Refusals" that filters by `severityText=WARN`. I can click any refusal, see its `trace_id`, and jump to the full distributed trace: the HTTP request, the Venice LLM call that compiled the intent, the validation loop, and the refusal.
-
-This is the killer feature: **logs carry the trace_id**. You don't have to guess which log line corresponds to which request. They're already linked.
-
-We also log card lifecycle events: `issued`, `frozen`, `revoked`, `nuked`, `onboarded`, `secret_rotated`. Each is a structured log with `card_event` as a filterable attribute. If a user reports their card stopped working, I filter by `card_id`, sort by timestamp, and see exactly when it was frozen or revoked, and by which operation.
-
-### The MCP Server Twist
-
-Here's something I didn't expect to be useful. SigNoz ships an MCP server that exposes `signoz_*` tools to AI agents. We deployed it in our `casting.yaml` alongside ClickHouse and the frontend.
-
-The recursion is a bit heady: **the same agents that spend money through GlassPay can query their own observability data through the SigNoz MCP server**. An agent that gets a "card declined" error can ask "show me my last 5 refusal logs" and get a structured answer about *why* it was declined — without a human logging into the dashboard.
-
-I'm still figuring out where this pattern breaks down (what happens when the agent's MCP query goes to a service that's also being observed, and it creates an infinite observability loop?), but for now it's a neat trick.
-
-## What I'd Do Differently
-
-1. **Start with OTel, don't add it later.** We built most of the app before adding instrumentation. Instrumenting *after* the fact means you miss events, you have to refactor error handling to include spans, and you find places where the trace context silently dies (e.g., background job schedulers that don't forward parent span IDs).
-
-2. **Don't instrument DNS and filesystem.** The auto-instrumentation package enables a bunch of instrumentations by default. `dns` and `fs` are noisy as hell — every file read and DNS lookup becomes a span. I disabled them immediately.
-
-3. **The preload pattern matters.** If you're using Bun, use `--preload` for OTel init. If you're on Node.js, use `--require` or `--import`. If you initialize OTel in the same file as your HTTP server import, you'll miss early spans and the auto-instrumentation may not catch all routes.
-
-4. **SigNoz Foundry works but needs Docker running.** The `foundryctl cast` command is clean — one file, one command — but it pulls 5 containers and ClickHouse needs ~4GB RAM. On a dev machine with Docker Desktop this is fine. On a Railway free tier? Not happening. Use SigNoz Cloud for small deployments.
-
-## Self-Hosted Deployment
-
-The `casting.yaml` spins up ClickHouse, the OTel Collector, Query Service, Frontend (port 3301), and the MCP Server (port 8000). That's it:
-
-```yaml
-# casting.yaml
-mode: docker
-flavor: compose
-services:
-  clickhouse:
-    image: clickhouse/clickhouse-server:24.12
-  otel-collector:
-    image: signoz/signoz-otel-collector:0.119.3
-  query-service:
-    image: signoz/query-service:0.81.0
-  frontend:
-    image: signoz/frontend:0.81.0
-  signoz-mcp-server:
-    image: signoz/mcp-server:latest
-```
-
-GlassPay exports telemetry to `http://localhost:4318` by default. To switch to SigNoz Cloud, I set two env vars: `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_HEADERS` with the ingestion key. The SDK passes headers to all exporters automatically — traces, metrics, and logs all go through the same OTLP pipeline.
-
-## The Real Win
-
-Before OTel and SigNoz, debugging an agent spend failure looked like:
-
-1. User reports "my card didn't work"
-2. I grep logs for that card ID
-3. I find a timeout with no further context
-4. I guess which service was slow
-5. I add more logging
-6. Wait for it to happen again
-
-Now it looks like:
-
-1. User reports "my card didn't work"
-2. I open the SigNoz traces view, filter by `card_id`
-3. I see the full trace: HTTP request → Venice LLM compilation → validation → Stripe auth → relayer submission
-4. I spot the slow hop immediately (usually the Stripe webhook)
-5. I open the correlated log and see the refusal reason
-6. Fixed in 2 minutes
-
-That's the difference observability makes. Not more data — correlated data that tells a story.
+The `--preload` flag means this runs before anything else in the bundle. The auto-instrumentation wraps every module as it loads. I disabled `dns` and `fs` immediately — without that, every file read and DNS lookup becomes a span, and the trace waterfall becomes unreadable noise.
 
 ---
 
-*GlassPay is open source. The SigNoz deployment config is in `casting.yaml` at the project root. If you're building agentic payment systems or just want to see how OTel works with Bun + Hono, the code is at [github.com/remit/glasspay](https://github.com/remit/glasspay).*
+## Traces: Wrapping Every Hop With Business Context
+
+Every API request gets a root span from Hono middleware:
+
+```typescript
+// packages/server/src/app.ts — route-level tracing middleware
+import { trace } from "@opentelemetry/api";
+const otel = trace.getTracer("glasspay-server");
+
+app.use("*", async (c, next) => {
+  const span = otel.startSpan(`HTTP ${c.req.method} ${c.req.routePath ?? c.req.path}`);
+  span.setAttribute("http.method", c.req.method);
+  span.setAttribute("http.url", c.req.path);
+  span.setAttribute("http.route", c.req.routePath ?? c.req.path);
+  try {
+    await next();
+    span.setAttribute("http.status_code", c.res.status);
+  } catch (e) {
+    span.setAttribute("http.status_code", 500);
+    span.recordException(e as Error);
+    throw e;
+  } finally {
+    span.end();
+  }
+});
+```
+
+In SigNoz, I can filter traces by `service.name = glasspay-server`, group by `http.route`, and see exactly which endpoints are slow. The `/cards/:id` route was running at 800ms P99 because of a missing index — visible immediately in the trace view.
+
+*[Screenshot: SigNoz Traces view filtered by `service.name = glasspay-server`, showing the route-level span waterfall with HTTP method, status, and duration columns]*
+
+Beyond the route-level spans, I added five business-logic spans that run on their own intervals or inside request handlers:
+
+**`stripe_webhook_auth`** — The 2-second timer is the scariest SLA in the system. This span fires on every Stripe real-time auth callback and carries `decision`, `card_id`, `amount`, and `merchant` as attributes. If a trace shows this span taking >1800ms, I know the authorization will fail before Stripe even tells me. The bottleneck was almost always a cold SQLite query — fixed by warming the cache at boot.
+
+**`1shot_relayer_redeem`** — Fires on every on-chain USDC redemption. Carries `usdc_amount`, `gas_fee_usdc`, `tx_hash`, and `memo`. This span revealed that the relayer was failing silently when gas estimates were too low — the span would show `ERROR` status but the app kept going. Now it throws a proper refusal.
+
+**`nl_compile`** — Tracks Venice AI chat completion calls. Carries `prompt_tokens` and `completion_tokens`. This is how I discovered we were spending $0.03 per card compilation on tokens alone — enough to justify caching repeated intents.
+
+**`reconcile_sweep`** — Runs every 5 minutes, resolves stuck pending charges. Attributes: `reconciled` count, `still_pending` count. Before this span, I didn't even know charges were getting stuck. The span flatlined at "0 reconciled" for three days before I looked — meaning charges were piling up silently.
+
+**`fiat_settle_sweep`** — Settles approved Visa charges as on-chain USDC transfers. Attributes: `settled` count, `left` count. This one catches when the fiat settlement queue backs up.
+
+```typescript
+// packages/server/src/index.ts — background sweep with tracing
+setInterval(async () => {
+  await otel.startActiveSpan("reconcile_sweep", async (span) => {
+    try {
+      const r = await reconcilePending({ store: deps.store, relayer: deps.relayer });
+      span.setAttribute("reconciled", r.reconciled);
+      span.setAttribute("still_pending", r.stillPending);
+    } catch (e) {
+      span.recordException(e as Error);
+      span.setStatus({ code: SpanStatusCode.ERROR });
+    } finally {
+      span.end();
+    }
+  });
+}, reconcileIntervalMs);
+```
+
+---
+
+## Metrics: Five Counters That Tell Me If We're Making Money
+
+The engine package emits five custom counters, created once and shared across the codebase:
+
+```typescript
+// packages/engine/src/telemetry.ts
+import { metrics } from "@opentelemetry/api";
+const meter = metrics.getMeter("glasspay-engine");
+
+export const usdcSpentTotal = meter.createCounter("glasspay.usdc_spent_total", {
+  description: "Total USDC spent across all confirmed redemptions",
+});
+export const activeCards = meter.createUpDownCounter("glasspay.active_cards", {
+  description: "Current live cards (issued − revoked)",
+});
+export const cardsIssuedTotal = meter.createCounter("glasspay.cards_issued_total", {
+  description: "Total cards issued across all users",
+});
+export const errorsTotal = meter.createCounter("glasspay.errors_total", {
+  description: "Total API-level errors and refusals",
+});
+export const chargesTotal = meter.createCounter("glasspay.charges_total", {
+  description: "Total charges processed (confirmed + pending + failed)",
+});
+```
+
+These increment in the critical code paths:
+
+- `cardsIssuedTotal.add(1)` in `issuance.ts` — fires on every root card, sub-card, and finalized issue
+- `chargesTotal.add(1)` in `spend.ts` — fires on every confirmed payment with the `kind` attribute
+- `errorsTotal.add(1)` in `routes.ts` — fires on every 403/422/502/500 response
+- `activeCards.add(1)` on issue, `activeCards.add(-1)` on revoke/nuke
+
+In SigNoz, I built a dashboard with five panels using raw ClickHouse queries:
+
+*[Screenshot: SigNoz dashboard showing the complete GlassPay layout — Cards Issued (Time Series), Active Cards (Value gauge), USDC Spent (Time Series), API Errors (Time Series), and API Latency by Route (Time Series) panels]*
+
+```sql
+-- Cards issued over time (Time Series)
+SELECT toStartOfInterval(toDateTime(intDiv(timestamp, 1000000000)), INTERVAL 5 MINUTE) AS ts,
+       sum(value) AS value
+FROM signoz_metrics.distributed_samples_v2
+WHERE metric_name = 'glasspay_cards_issued_total'
+  AND temporality = 'Cumulative'
+  AND ts BETWEEN $start_datetime AND $end_datetime
+GROUP BY ts ORDER BY ts;
+
+-- Active cards (Value / big number)
+SELECT sum(value) AS active_cards
+FROM signoz_metrics.distributed_samples_v2
+WHERE metric_name = 'glasspay_active_cards'
+  AND temporality = 'Cumulative'
+  AND timestamp > now() * 1000000000 - 60000000000;
+```
+
+**Metric naming gotcha:** When you create a counter in the OTel Metrics API with `meter.createCounter("glasspay.usdc_spent_total")`, the metric name appears in SigNoz exactly as written — dots, slashes, and all. But in the SigNoz Metrics explorer, the autocomplete only shows metrics that have sent at least one data point. If you just deployed and haven't triggered the code path yet, the metric won't appear in the dropdown, and you'll think the exporter is broken. Run a test call first, then refresh the explorer.
+
+---
+
+## Structured Logs: Card Lifecycle Events With Trace Correlation
+
+The most impactful thing we did was emit a structured log at every significant card lifecycle transition. There are 29 typed refusal points in `spend.ts` alone (plus another 16 across `ops.ts`, `issuance.ts`, and the MCP server), and each one now emits a log with the card ID, refusal reason, and attempted amount:
+
+```typescript
+// packages/engine/src/telemetry.ts — structured log functions
+export function emitCardLog(event: string, cardId: string, extra?: Record<string, string | number>): void {
+  logger.emit({
+    severityNumber: 9,   // INFO
+    severityText: "INFO",
+    body: `Card ${event}: ${cardId}`,
+    attributes: { card_event: event, card_id: cardId, ...extra },
+  });
+}
+
+export function emitErrorLog(operation: string, message: string, extra?: Record<string, string | number>): void {
+  logger.emit({
+    severityNumber: 17,  // ERROR
+    severityText: "ERROR",
+    body: `Error in ${operation}: ${message}`,
+    attributes: { operation, error_message: message, ...extra },
+  });
+}
+```
+
+These fire across the full card lifecycle:
+
+| Log Call | Event | Where |
+|----------|-------|-------|
+| `emitCardLog("issued", cardId, { k_agent_address })` | Card created | `issuance.ts` |
+| `emitCardLog("onboarded", userId, { address })` | User registered | `routes.ts` |
+| `emitCardLog("frozen", cardId)` | Card paused | `ops.ts` |
+| `emitCardLog("revoked", cardId)` | Card killed | `ops.ts` |
+| `emitCardLog("nuked", userId)` | All cards killed | `ops.ts` |
+| `emitCardLog("url_revealed", cardId)` | Secret viewed | `routes.ts` |
+| `emitCardLog("secret_rotated", cardId)` | Secret rotated | `routes.ts` |
+| `emitErrorLog("HTTP POST /cards", e.message, { status: "500" })` | API error | `routes.ts` (error handler) |
+
+In SigNoz Logs, I created a saved view called **"Card Lifecycle"** filtered to `card_event:*`. Another called **"API Errors"** filtered to `severityText:ERROR` grouped by `operation`.
+
+*[Screenshot: SigNoz Logs explorer showing a structured log entry with `card_event: issued` attribute and the linked `trace_id` that opens the associated distributed trace]*
+
+The killer feature is the `trace_id` that OTel attaches to every log automatically — I can click any refusal log, see its trace ID, and jump to the full distributed trace showing exactly which hop caused the failure.
+
+---
+
+## The MCP Server: Agents Observing Themselves
+
+Here's the meta-twist. SigNoz ships an MCP server that exposes observability tools to AI agents. The `casting.yaml` includes it:
+
+```yaml
+services:
+  signoz-mcp-server:
+    image: signoz/mcp-server:latest
+    ports:
+      - "8000:8000"
+    environment:
+      SIGNOZ_API_URL: http://query-service:8080
+      SIGNOZ_MCP_AUTH_TOKEN: glasspay_mcp_dev
+```
+
+This exposes 8 MCP tools to any connected AI agent:
+
+| Tool | What It Does |
+|------|-------------|
+| `signoz_search_docs` | Search SigNoz documentation |
+| `signoz_create_dashboard` | Build dashboard panels from GlassPay metrics |
+| `signoz_modify_dashboard` | Update existing dashboard configurations |
+| `signoz_create_alert` | Set up alerts for error spikes, card stalls |
+| `signoz_investigate_alert` | Deep-dive alert-triggered incidents |
+| `signoz_generate_query` | Generate ClickHouse queries for observability data |
+| `signoz_explain_dashboard` | Understand dashboard layout semantics |
+| `signoz_manage_views` | Create and manage saved log views |
+
+**The recursion:** The same agents that spend money through GlassPay can query their own observability data through SigNoz MCP. An agent that gets a `"card declined"` response can call `signoz_search_docs` to look up refusal codes, generate a ClickHouse query to find its own logs, and figure out *why* it was declined — without a human touching the dashboard. The agent asks: "Show me my last 5 refusal logs" and SigNoz MCP returns structured answers.
+
+I connected it to Claude Code:
+
+```bash
+claude mcp add --scope user --transport http signoz https://mcp.us2.signoz.cloud/mcp
+# Then: /mcp → select signoz → authenticate via OAuth
+```
+
+Now when I'm debugging, I can ask Claude: *"Show me the glasspay_cards_issued_total metric over the last hour"* and it queries SigNoz via MCP and returns the result inline. No context-switching to the SigNoz UI.
+
+*[Screenshot: Terminal showing an AI agent querying SigNoz via MCP — the `signoz_generate_query` or `card` tool returning GlassPay trace data inline in the chat]*
+
+---
+
+## The Dashboard Layout That Tells the Story
+
+I arranged the SigNoz dashboard in a narrative flow. Top row: "Are cards being created?" (Cards Issued + Active Cards gauges). Middle row: "Is money moving?" (USDC Spent + Charges Processed time series). Bottom row: "Is anything breaking?" (API Error Rate + P99 Latency by Route).
+
+When I present this in the hackathon demo, the script is:
+
+1. Open SigNoz → **Traces** → filter `service.name = glasspay-server` — show the full request waterfall
+2. Issue a card on the GlassPay dashboard — watch the `card_event: "issued"` log appear in SigNoz in real-time
+3. Make a payment — trace the `1shot_relayer_redeem` span + `charge_event: "confirmed"` log
+4. Freeze the card — see `card_event: "frozen"` with timestamp
+5. Switch to the dashboard — see Cards Issued counter go up, USDC Spent increase
+
+The demo took 30 seconds to set up live and it's the most convincing thing I've built for debugging.
+
+---
+
+## Alert Recipes That Actually Catch Things
+
+Beyond the dashboard, I set up alerts in SigNoz for conditions that matter in a financial system:
+
+| Alert | Condition | Why |
+|-------|-----------|-----|
+| **High Error Rate** | `glasspay_errors_total` rate > 10/min for 5 min | Catches API degradation before users notice |
+| **No Cards Issued** | `glasspay_cards_issued_total` flat for 30 min | Either the onboarding flow is broken or nobody is using the app |
+| **High API Latency** | P99 HTTP duration > 5000ms for 5 min | Usually a cold DB query or a relayer stall |
+| **Refusal Spike** | Log count with `refusal_reason:*` > 20/min | An agent could be in a retry loop burning users' budgets on failed attempts |
+
+These live in SigNoz and push notifications to Slack. The "Refusal Spike" alert caught an agent that was accidentally in a 1-second retry loop — it tried to spend $5 every second, getting refused each time by the per-period limit. Without the alert, it would have run for hours generating 3,600+ refused transactions and confusing the user.
+
+---
+
+## What I'd Tell My Past Self
+
+1. **The Hono middleware must be the first `app.use()` call.** If anything registers a route before the tracing middleware, that route won't have a root span. Learned this the hard way — the health check endpoint was invisible in SigNoz for a week.
+
+2. **Background jobs need explicit spans.** They don't inherit a parent span from an HTTP request, so they're invisible in the trace waterfall unless you manually wrap them with `startActiveSpan`. The `reconcile_sweep` and `fiat_settle_sweep` intervals were silent failures until I added spans.
+
+3. **Auto-instrumentation is too noisy by default.** Disable `dns` and `fs` instrumentations immediately. Every file read and DNS lookup becomes a span and the waterfall becomes unreadable.
+
+4. **Self-hosted SigNoz works but needs RAM.** ClickHouse needs ~4GB, so Railway free tier won't cut it. Use SigNoz Cloud for small deployments — the same OTLP pipeline works with just different env vars.
+
+---
+
+## The Pipeline
+
+```yaml
+# casting.yaml — one command to deploy
+mode: docker
+flavor: compose
+services:
+  clickhouse:          clickhouse/clickhouse-server:24.12
+  otel-collector:      signoz/signoz-otel-collector:0.119.3
+  query-service:       signoz/query-service:0.81.0
+  frontend:            signoz/frontend:0.81.0        # UI at :3301
+  signoz-mcp-server:   signoz/mcp-server:latest       # MCP at :8000
+```
+
+The `casting.yaml.lock` pins every image to its digest for reproducible judging. Deploy with `foundryctl cast -f casting.yaml --locked` and the entire stack — ClickHouse, Collector, Query Service, Frontend, and MCP Server — comes up with one command.
+
+GlassPay's OTel SDK exports to `http://localhost:4318` by default. Switching to SigNoz Cloud is two env vars:
+
+```
+OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.us2.signoz.cloud
+OTEL_EXPORTER_OTLP_HEADERS=signoz-ingestion-key=<your-key>
+```
+
+The SDK passes headers to all three exporters automatically — traces, metrics, and logs go through the same pipeline.
+
+---
+
+## After
+
+The debugging loop went from:
+
+> User reports "card declined" → SSH → grep logs → find "timeout" → guess which service → add more logging → wait for it to happen again
+
+To:
+
+> User reports "card declined" → open SigNoz → filter by `card_id` → see full trace with correlated logs → fix the slow hop in 2 minutes
+
+The difference isn't more data. It's **correlated data that tells a story**. The trace waterfall shows the sequential hops. The metrics show the trend. The logs show the context. All linked by `trace_id` — click any log line and jump to its full trace.
+
+For agentic systems, this correlation matters more than anywhere else. An AI agent doesn't know the Stripe webhook has a 2-second deadline. It doesn't know the relayer failed silently. It just sees a "card declined" response. If I can't trace that response back to the root cause in under a minute, the agent will retry, the refusals will pile up, and the user's budget will look like it's under attack.
+
+SigNoz turns the firehose of events into a coherent timeline. And with the MCP server, even the agents themselves can read it.
+
+---
+
+*GlassPay is open source at [github.com/LSUDOKO/GlassPay](https://github.com/LSUDOKO/GlassPay). The SigNoz deployment config is in `casting.yaml` at the project root. Built for the MetaMask Smart Accounts Kit × 1Shot API × Venice AI Dev Cook Off and the SigNoz Hackathon. If you're building agentic payment systems — or just want to see how OTel works with Bun + Hono — the full instrumentation is in `packages/engine/src/telemetry.ts` and `packages/server/src/app.ts`.*
