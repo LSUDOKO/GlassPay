@@ -2,31 +2,29 @@
 // Bun --preload ./src/otel.ts ensures this runs first so auto-instrumentation
 // wraps every HTTP, fetch, and database call from the start.
 //
-// Trace export: OTLP/HTTP to OTEL_EXPORTER_OTLP_ENDPOINT (default localhost:4318).
-// Logs + metrics: auto-detected by the SDK from OTEL_METRICS_EXPORTER,
-// OTEL_LOGS_EXPORTER, OTEL_EXPORTER_OTLP_LOGS_ENDPOINT, etc.
-// The engine/telemetry.ts counters/gauges and the structured refusal logs
-// route through the global providers and auto-export when configured.
+// ALL exporters are auto-detected from environment variables:
+//   OTEL_TRACES_EXPORTER=otlp          (or http/protobuf, otlp, console, etc.)
+//   OTEL_METRICS_EXPORTER=otlp
+//   OTEL_LOGS_EXPORTER=otlp
+//   OTEL_EXPORTER_OTLP_ENDPOINT       (SigNoz Cloud or self-hosted URL)
+//   OTEL_EXPORTER_OTLP_HEADERS        (SigNoz Cloud: signoz-ingestion-key=YOUR_KEY)
+//
+// The SDK passes env-var headers to ALL auto-detected exporters automatically,
+// so a single OTEL_EXPORTER_OTLP_HEADERS applies to traces, metrics, and logs.
 //
 // SigNoz dashboard labels: service.name = "glasspay-server"
 
 import { diag, DiagConsoleLogger, DiagLogLevel } from "@opentelemetry/api";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 
 // Enable diagnostic logging when GLASSPAY_OTEL_DEBUG=1
 if (process.env.GLASSPAY_OTEL_DEBUG === "1") {
   diag.setLogger(new DiagConsoleLogger(), DiagLogLevel.DEBUG);
 }
 
-const otelEndpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? "http://localhost:4318";
-
 const sdk = new NodeSDK({
   serviceName: "glasspay-server",
-  traceExporter: new OTLPTraceExporter({
-    url: `${otelEndpoint}/v1/traces`,
-  }),
   instrumentations: [
     getNodeAutoInstrumentations({
       // Disable noisy diagnostics: we add our own fine-grained spans
@@ -49,7 +47,7 @@ process.on("SIGTERM", () => {
 // until the SDK is ready.
 try {
   await sdk.start();
-  console.log("[otel] OpenTelemetry SDK started — exporting to", otelEndpoint);
+  console.log("[otel] OpenTelemetry SDK started — service.name=glasspay-server");
 } catch (err) {
   console.error("[otel] failed to start SDK", err);
 }
