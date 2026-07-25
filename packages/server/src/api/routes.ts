@@ -237,7 +237,7 @@ export function apiRoutes(deps: AppDeps, oauth: OAuthStore): Hono<{ Variables: {
         privyDid,
       });
       deps.store.setRevocationNonce(userId, nonce);
-      emitErrorLog("onboarded", "user onboarded", { user_id: userId, address: body.address ?? "", has_auth7702: String(!!body.auth7702) });
+      emitCardLog("onboarded", userId, { address: body.address ?? "", has_auth7702: String(!!body.auth7702) });
       return {
         user_id: userId,
         address: body.address,
@@ -397,6 +397,7 @@ export function apiRoutes(deps: AppDeps, oauth: OAuthStore): Hono<{ Variables: {
       const card = ownedCard(c, c.req.param("id"));
       const secret = await viewCardSecret(deps.store, card.id);
       if (!secret) throw new RefusalError("card_not_found", "no secret on file for this card");
+      emitCardLog("url_revealed", card.id);
       return { card_url: cardUrl(secret) };
     }),
   );
@@ -405,6 +406,7 @@ export function apiRoutes(deps: AppDeps, oauth: OAuthStore): Hono<{ Variables: {
     handle(c, async () => {
       const card = ownedCard(c, c.req.param("id"));
       const secret = await rotateCardSecret(deps.store, card.id);
+      emitCardLog("secret_rotated", card.id);
       return { card_url: cardUrl(secret) };
     }),
   );
