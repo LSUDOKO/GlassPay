@@ -168,7 +168,7 @@ GROUP BY ts ORDER BY ts;
 SELECT sum(value) AS active_cards
 FROM signoz_metrics.distributed_samples_v2
 WHERE metric_name = 'glasspay_active_cards'
-  AND timestamp_ms > now() * 1000 - 60000;
+  AND timestamp_ms > toUnixTimestamp(now()) * 1000 - 60000;
 ```
 
 **Metric naming gotcha:** When you create a counter in the OTel Metrics API with `meter.createCounter("glasspay.usdc_spent_total")`, the metric name appears in SigNoz exactly as written — dots, slashes, and all. But in the SigNoz Metrics explorer, the autocomplete only shows metrics that have sent at least one data point. If you just deployed and haven't triggered the code path yet, the metric won't appear in the dropdown, and you'll think the exporter is broken. Run a test call first, then refresh the explorer.

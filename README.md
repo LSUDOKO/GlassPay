@@ -94,7 +94,7 @@ ORDER BY ts
 SELECT sum(value) AS active_cards
 FROM signoz_metrics.distributed_samples_v2
 WHERE metric_name = 'glasspay_active_cards'
-  AND timestamp_ms > now() * 1000 - 60000
+  AND timestamp_ms > toUnixTimestamp(now()) * 1000 - 60000
 ```
 
 #### Panel 3: USDC Spent (Time Series)
