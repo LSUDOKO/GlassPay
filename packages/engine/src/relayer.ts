@@ -4,10 +4,13 @@
 // status resolves via getStatus({chainId, id}) -> receipt.transactionHash,
 // estimate failures come back as result.success:false + error STRING.
 
+import { trace } from "@opentelemetry/api";
 import type { Address, Hex } from "viem";
 import { CHAINS, CHAIN_ID, type ChainId } from "./chains";
 import { EngineError } from "./errors";
 import type { Wire7702Auth, WireDelegation, WireExecution } from "./types";
+
+const tracer = trace.getTracer("glasspay-engine");
 
 export type RelayerTransaction = {
   permissionContext: WireDelegation[]; // LEAF-FIRST; [0].delegate MUST == targetAddress
@@ -82,30 +85,57 @@ export class Relayer {
   /** Cached: targetAddress/feeCollector/token list. Params = FLAT array of decimal chainId strings. */
   async getCapabilities(): Promise<Capabilities> {
     if (this.caps) return this.caps;
-    const { result, error } = await this.call("relayer_getCapabilities", [String(this.chainId)]);
-    if (error || !result) throw new EngineError("relayer", `getCapabilities failed: ${JSON.stringify(error)}`);
-    const entry = (result as Record<string, { targetAddress: Address; feeCollector: Address; tokens: Capabilities["tokens"] }>)[
-      String(this.chainId)
-    ];
-    if (!entry?.targetAddress) throw new EngineError("relayer", `getCapabilities: no entry for chain ${this.chainId}`);
-    this.caps = { targetAddress: entry.targetAddress, feeCollector: entry.feeCollector, tokens: entry.tokens ?? [] };
-    return this.caps;
+    return tracer.startActiveSpan("relayer_get_capabilities", async (span) => {
+      span.setAttribute("chain_id", String(this.chainId));
+      const { result, error } = await this.call("relayer_getCapabilities", [String(this.chainId)]);
+      if (error || !result) {
+        span.recordException(new Error(JSON.stringify(error)));
+        span.setStatus({ code: 2 });
+        span.end();
+        throw new EngineError("relayer", `getCapabilities failed: ${JSON.stringify(error)}`);
+      }
+      const entry = (result as Record<string, { targetAddress: Address; feeCollector: Address; tokens: Capabilities["tokens"] }>)[
+        String(this.chainId)
+      ];
+      if (!entry?.targetAddress) {
+        span.end();
+        throw new EngineError("relayer", `getCapabilities: no entry for chain ${this.chainId}`);
+      }
+      this.caps = { targetAddress: entry.targetAddress, feeCollector: entry.feeCollector, tokens: entry.tokens ?? [] };
+      span.setAttribute("target_address", this.caps.targetAddress);
+      span.setAttribute("token_count", String(this.caps.tokens.length));
+      span.end();
+      return this.caps;
+    });
   }
 
   /** Params = bare object {chainId, token}. minFee is a DOLLAR-DECIMAL string. */
   async getFeeData(token: Address): Promise<FeeData> {
-    const { result, error } = await this.call("relayer_getFeeData", { chainId: String(this.chainId), token });
-    if (error || !result) throw new EngineError("relayer", `getFeeData failed: ${JSON.stringify(error)}`);
-    const r = result as Record<string, unknown>;
-    return {
-      minFee: r.minFee as string,
-      rate: r.rate as number,
-      gasPrice: r.gasPrice as string,
-      expiry: r.expiry as number,
-      feeCollector: r.feeCollector as Address,
-      targetAddress: r.targetAddress as Address,
-      context: r.context as string,
-    };
+    return tracer.startActiveSpan("relayer_get_fee_data", async (span) => {
+      span.setAttribute("chain_id", String(this.chainId));
+      span.setAttribute("token", token);
+      const { result, error } = await this.call("relayer_getFeeData", { chainId: String(this.chainId), token });
+      if (error || !result) {
+        span.recordException(new Error(JSON.stringify(error)));
+        span.setStatus({ code: 2 });
+        span.end();
+        throw new EngineError("relayer", `getFeeData failed: ${JSON.stringify(error)}`);
+      }
+      const r = result as Record<string, unknown>;
+      span.setAttribute("min_fee", r.minFee as string);
+      span.setAttribute("gas_price", r.gasPrice as string);
+      span.setAttribute("fee_collector", r.feeCollector as string);
+      span.end();
+      return {
+        minFee: r.minFee as string,
+        rate: r.rate as number,
+        gasPrice: r.gasPrice as string,
+        expiry: r.expiry as number,
+        feeCollector: r.feeCollector as Address,
+        targetAddress: r.targetAddress as Address,
+        context: r.context as string,
+      };
+    });
   }
 
   /** authorizationList: EXACTLY ONE entry when present (relayer hard guard); omit once delegator has code. */
@@ -135,11 +165,19 @@ export class Relayer {
   async send(transactions: RelayerTransaction[], context: string, authorizationList?: Wire7702Auth[]): Promise<string> {
     const params: Record<string, unknown> = { chainId: String(this.chainId), transactions, context };
     if (authorizationList?.length) params.authorizationList = authorizationList;
-    const { result, error } = await this.call("relayer_send7710Transaction", params);
-    if (error || typeof result !== "string") {
-      throw new EngineError("relayer", `send rejected: ${JSON.stringify(error ?? result)}`);
-    }
-    return result;
+    return tracer.startActiveSpan("1shot_relayer_redeem", async (span) => {
+      span.setAttribute("chain_id", String(this.chainId));
+      span.setAttribute("transaction_count", String(transactions.length));
+      span.setAttribute("has_auth_list", String(!!authorizationList?.length));
+      const { result, error } = await this.call("relayer_send7710Transaction", params);
+      if (error || typeof result !== "string") {
+        span.recordException(new Error(JSON.stringify(error ?? result)));
+        span.setStatus({ code: 2 }); // SpanStatusCode.ERROR
+        throw new EngineError("relayer", `send rejected: ${JSON.stringify(error ?? result)}`);
+      }
+      span.setAttribute("request_id", result);
+      return result;
+    });
   }
 
   /** Param key MUST be `id` (other keys throw server-side).

@@ -9,6 +9,7 @@
 // v1 wall: native-ETH value (buy-NFT-for-0.1-ETH style clauses) is NOT expressible — the
 // contract lane is value:0 (deferred to v2). Such clauses come back as warnings, not terms.
 
+import { trace } from "@opentelemetry/api";
 import { isAddress, type Address } from "viem";
 import { validateTerms, usdcToAtoms, type CardTerms, RefusalError } from "@glasspay/engine";
 import { APPROVE_SIG } from "@glasspay/engine";
@@ -20,6 +21,8 @@ const USD_AMOUNT_RE = /^\d+(?:\.\d{1,6})?$/;
 import type { ChatFn } from "./client";
 import { extractJson } from "./client";
 import type { ResolvedEntity, Resolvers } from "./resolvers";
+
+const tracer = trace.getTracer("glasspay-server");
 
 // ---------------------------------------------------------------------------
 // The plan the model emits (named entities + numbers; NEVER trusted for addresses)
@@ -102,10 +105,15 @@ export async function compileIntent(
   const now = deps.now ? deps.now() : Math.floor(Date.now() / 1000);
 
   const attempt = async (): Promise<CompileResult> => {
-    const raw = await deps.chat([
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: intent },
-    ]);
+    const raw = await tracer.startActiveSpan("nl_compile", async (span) => {
+      span.setAttribute("intent_length", intent.length);
+      span.setAttribute("intent_preview", intent.slice(0, 120));
+      const result = await deps.chat([
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: intent },
+      ]);
+      return result;
+    });
     const plan = extractJson(raw) as Plan; // throws on no JSON; caught below for the retry
     return assemble(plan, intent, deps.resolvers, now);
   };
