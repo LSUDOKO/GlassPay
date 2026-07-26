@@ -798,7 +798,6 @@ OTEL_LOGS_EXPORTER=otlp`} />
        sum(value) AS value
 FROM signoz_metrics.distributed_samples_v2
 WHERE metric_name = 'glasspay_cards_issued_total'
-  AND temporality = 'Cumulative'
   AND ts BETWEEN $start_datetime AND $end_datetime
 GROUP BY ts
 ORDER BY ts`} />
@@ -854,7 +853,6 @@ ORDER BY ts`} />
        sum(value) AS value
 FROM signoz_metrics.distributed_samples_v2
 WHERE metric_name = 'glasspay_cards_issued_total'
-  AND temporality = 'Cumulative'
   AND ts BETWEEN $start_datetime AND $end_datetime
 GROUP BY ts
 ORDER BY ts`} />
@@ -866,7 +864,6 @@ ORDER BY ts`} />
             <Code code={`SELECT sum(value) AS active_cards
 FROM signoz_metrics.distributed_samples_v2
 WHERE metric_name = 'glasspay_active_cards'
-  AND temporality = 'Cumulative'
   AND timestamp_ms > now() * 1000 - 60000`} />
 
             <h3>Panel 3: USDC Spent</h3>
@@ -879,7 +876,6 @@ WHERE metric_name = 'glasspay_active_cards'
        sum(value) AS value
 FROM signoz_metrics.distributed_samples_v2
 WHERE metric_name = 'glasspay_usdc_spent_total'
-  AND temporality = 'Cumulative'
   AND ts BETWEEN $start_datetime AND $end_datetime
 GROUP BY ts
 ORDER BY ts`} />
@@ -894,7 +890,6 @@ ORDER BY ts`} />
        sum(value) AS errors
 FROM signoz_metrics.distributed_samples_v2
 WHERE metric_name = 'glasspay_errors_total'
-  AND temporality = 'Cumulative'
   AND ts BETWEEN $start_datetime AND $end_datetime
 GROUP BY ts
 ORDER BY ts`} />

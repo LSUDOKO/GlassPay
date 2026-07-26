@@ -161,7 +161,6 @@ SELECT toStartOfInterval(toDateTime(intDiv(timestamp_ms, 1000)), INTERVAL 5 MINU
        sum(value) AS value
 FROM signoz_metrics.distributed_samples_v2
 WHERE metric_name = 'glasspay_cards_issued_total'
-  AND temporality = 'Cumulative'
   AND ts BETWEEN $start_datetime AND $end_datetime
 GROUP BY ts ORDER BY ts;
 
@@ -169,7 +168,6 @@ GROUP BY ts ORDER BY ts;
 SELECT sum(value) AS active_cards
 FROM signoz_metrics.distributed_samples_v2
 WHERE metric_name = 'glasspay_active_cards'
-  AND temporality = 'Cumulative'
   AND timestamp_ms > now() * 1000 - 60000;
 ```
 
