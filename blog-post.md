@@ -157,7 +157,7 @@ In SigNoz, I built a dashboard with five panels using raw ClickHouse queries:
 
 ```sql
 -- Cards issued over time (Time Series)
-SELECT toStartOfInterval(toDateTime(intDiv(timestamp, 1000000000)), INTERVAL 5 MINUTE) AS ts,
+SELECT toStartOfInterval(toDateTime(intDiv(timestamp_ms, 1000)), INTERVAL 5 MINUTE) AS ts,
        sum(value) AS value
 FROM signoz_metrics.distributed_samples_v2
 WHERE metric_name = 'glasspay_cards_issued_total'
@@ -170,7 +170,7 @@ SELECT sum(value) AS active_cards
 FROM signoz_metrics.distributed_samples_v2
 WHERE metric_name = 'glasspay_active_cards'
   AND temporality = 'Cumulative'
-  AND timestamp > now() * 1000000000 - 60000000000;
+  AND timestamp_ms > now() * 1000 - 60000;
 ```
 
 **Metric naming gotcha:** When you create a counter in the OTel Metrics API with `meter.createCounter("glasspay.usdc_spent_total")`, the metric name appears in SigNoz exactly as written — dots, slashes, and all. But in the SigNoz Metrics explorer, the autocomplete only shows metrics that have sent at least one data point. If you just deployed and haven't triggered the code path yet, the metric won't appear in the dropdown, and you'll think the exporter is broken. Run a test call first, then refresh the explorer.

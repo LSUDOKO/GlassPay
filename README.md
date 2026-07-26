@@ -80,7 +80,7 @@ Create a GlassPay dashboard in SigNoz with these panels:
 
 #### Panel 1: Cards Issued Over Time (Time Series)
 ```sql
-SELECT toStartOfInterval(toDateTime(intDiv(timestamp, 1000000000)), INTERVAL 5 MINUTE) AS ts,
+SELECT toStartOfInterval(toDateTime(intDiv(timestamp_ms, 1000)), INTERVAL 5 MINUTE) AS ts,
        sum(value) AS value
 FROM signoz_metrics.distributed_samples_v2
 WHERE metric_name = 'glasspay_cards_issued_total'
@@ -96,12 +96,12 @@ SELECT sum(value) AS active_cards
 FROM signoz_metrics.distributed_samples_v2
 WHERE metric_name = 'glasspay_active_cards'
   AND temporality = 'Cumulative'
-  AND timestamp > now() * 1000000000 - 60000000000
+  AND timestamp_ms > now() * 1000 - 60000
 ```
 
 #### Panel 3: USDC Spent (Time Series)
 ```sql
-SELECT toStartOfInterval(toDateTime(intDiv(timestamp, 1000000000)), INTERVAL 5 MINUTE) AS ts,
+SELECT toStartOfInterval(toDateTime(intDiv(timestamp_ms, 1000)), INTERVAL 5 MINUTE) AS ts,
        sum(value) AS value
 FROM signoz_metrics.distributed_samples_v2
 WHERE metric_name = 'glasspay_usdc_spent_total'
@@ -113,7 +113,7 @@ ORDER BY ts
 
 #### Panel 4: API Errors (Time Series)
 ```sql
-SELECT toStartOfInterval(toDateTime(intDiv(timestamp, 1000000000)), INTERVAL 5 MINUTE) AS ts,
+SELECT toStartOfInterval(toDateTime(intDiv(timestamp_ms, 1000)), INTERVAL 5 MINUTE) AS ts,
        sum(value) AS errors
 FROM signoz_metrics.distributed_samples_v2
 WHERE metric_name = 'glasspay_errors_total'

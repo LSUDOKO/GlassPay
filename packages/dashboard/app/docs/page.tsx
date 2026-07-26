@@ -793,7 +793,7 @@ OTEL_LOGS_EXPORTER=otlp`} />
               <code>signoz_metrics.distributed_samples_v2</code> table. Example query for cards issued:
             </p>
             <Code code={`SELECT toStartOfInterval(
-         toDateTime(intDiv(timestamp, 1000000000)),
+         toDateTime(intDiv(timestamp_ms, 1000)),
          INTERVAL 5 MINUTE) AS ts,
        sum(value) AS value
 FROM signoz_metrics.distributed_samples_v2
@@ -849,7 +849,7 @@ ORDER BY ts`} />
               Panel Type: <b>Time Series</b>. Shows the rate of card issuances over time.
             </p>
             <Code code={`SELECT toStartOfInterval(
-         toDateTime(intDiv(timestamp, 1000000000)),
+         toDateTime(intDiv(timestamp_ms, 1000)),
          INTERVAL 5 MINUTE) AS ts,
        sum(value) AS value
 FROM signoz_metrics.distributed_samples_v2
@@ -867,14 +867,14 @@ ORDER BY ts`} />
 FROM signoz_metrics.distributed_samples_v2
 WHERE metric_name = 'glasspay_active_cards'
   AND temporality = 'Cumulative'
-  AND timestamp > now() * 1000000000 - 60000000000`} />
+  AND timestamp_ms > now() * 1000 - 60000`} />
 
             <h3>Panel 3: USDC Spent</h3>
             <p className="docp">
               Panel Type: <b>Time Series</b>. Tracks cumulative USDC volume.
             </p>
             <Code code={`SELECT toStartOfInterval(
-         toDateTime(intDiv(timestamp, 1000000000)),
+         toDateTime(intDiv(timestamp_ms, 1000)),
          INTERVAL 5 MINUTE) AS ts,
        sum(value) AS value
 FROM signoz_metrics.distributed_samples_v2
@@ -889,7 +889,7 @@ ORDER BY ts`} />
               Panel Type: <b>Time Series</b>. Track error spikes.
             </p>
             <Code code={`SELECT toStartOfInterval(
-         toDateTime(intDiv(timestamp, 1000000000)),
+         toDateTime(intDiv(timestamp_ms, 1000)),
          INTERVAL 5 MINUTE) AS ts,
        sum(value) AS errors
 FROM signoz_metrics.distributed_samples_v2
