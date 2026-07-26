@@ -9,8 +9,22 @@
 // is the page's always-moving layer. The Boot overlay exits over this.
 
 import { useState } from "react";
+import { useLoginWithOAuth } from "@privy-io/react-auth";
 import { ChipDots, Guilloche } from "./ui";
 import s from "./login.module.css";
+
+function GoogleConnect() {
+  const { initOAuth } = useLoginWithOAuth();
+  return (
+    <button
+      className={`primary ${s.cta}`}
+      style={{ marginLeft: 8, backgroundColor: "#db4437" }}
+      onClick={() => initOAuth({ provider: "google" })}
+    >
+      Google
+    </button>
+  );
+}
 
 export function Login({ onLogin }: { onLogin: () => void }) {
   const [hover, setHover] = useState(false);
@@ -40,6 +54,7 @@ export function Login({ onLogin }: { onLogin: () => void }) {
           <button className={`primary ${s.cta}`} onClick={onLogin} data-testid="login">
             Sign In
           </button>
+          <GoogleConnect />
         </span>
       </section>
 

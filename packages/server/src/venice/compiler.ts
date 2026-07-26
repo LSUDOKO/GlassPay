@@ -91,7 +91,9 @@ Rules:
   never unsupported.
 - Capture EVERY limit the user states — period, lifetime, per-payment / per-tx (perTx), expiry,
   max uses, merchant, per-trade cap. Never drop one they asked for. At the same time, do NOT ADD a
-  limit they did not state (no default perTx, expiry, or maxUses). Include all stated limits, invent none.
+  limit they did not state (no default amount, perTx, expiry, lifetime, or maxUses). Include all
+  stated limits, invent none. The example JSON above is only a shape reference — do NOT copy its
+  amounts into your output.
 - Return RAW JSON only — no prose, no markdown code fences.`;
 
 /** Run the NL -> plan -> resolve -> assemble pipeline. `chat` is injectable (tests fake it).

@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { api, type TreeNode, type CardTermsInput, type CompileLabel, type CompileResult } from "@/lib/api";
+import { useCreateWallet } from "@privy-io/react-auth";
 import { useRemit } from "./useRemit";
 import { Boot } from "./components/Boot";
 import { FirstRun } from "./components/FirstRun";
@@ -24,6 +25,29 @@ export default function Home() {
   const remit = useRemit();
   const { ready, authenticated, user, address, login, logout, sign7702, signOnboardProof, embeddedReady } = remit;
   const did = user?.id;
+
+  const { createWallet } = useCreateWallet();
+  const createWalletRef = useRef(false);
+
+  // When a user authenticates via a headless flow (e.g., Google OAuth), Privy's
+  // `createOnLogin` flag is ignored by design. We must manually provision the
+  // embedded wallet for them if they land here without one.
+  useEffect(() => {
+    if (!ready || !authenticated || !user) return;
+    
+    // Check if the user already has a Privy embedded wallet in their linked accounts
+    const hasEmbeddedWallet = user.linkedAccounts.some(
+      (a) => a.type === "wallet" && (a.walletClientType === "privy" || a.walletClientType === "privy-v2")
+    );
+    
+    if (!hasEmbeddedWallet && !createWalletRef.current) {
+      createWalletRef.current = true;
+      createWallet().catch((err) => {
+        console.error("Failed to proactively create embedded wallet:", err);
+        createWalletRef.current = false; // Allow retry on transient failure
+      });
+    }
+  }, [ready, authenticated, user, createWallet]);
 
   const [onboarded, setOnboarded] = useState(false);
   const [probed, setProbed] = useState(false);
@@ -524,7 +548,7 @@ function IssueModal({
   const [maxUses, setMaxUses] = useState("");
   const [subcards, setSubcards] = useState(true);
   // pay lane
-  const [amount, setAmount] = useState("25");
+  const [amount, setAmount] = useState("");
   const [period, setPeriod] = useState(604800);
   const [lifetime, setLifetime] = useState("");
   const [perTx, setPerTx] = useState("");
