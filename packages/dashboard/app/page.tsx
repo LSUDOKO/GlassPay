@@ -364,7 +364,32 @@ function Dashboard({
   useEffect(() => {
     // the specimen is local-only: polling its id would just 422 every tick
     if (!idsKey || idsKey === "specimen") {
-      setFeed([]);
+      const mockFeed: FeedRow[] = [];
+      if (idsKey === "specimen") {
+        const now = Math.floor(Date.now() / 1000);
+        const pattern = [2, 0, 5, 1, 0, 4, 3, 0, 0, 8, 2, 0, 1, 5, 0];
+        pattern.forEach((count, dayIdx) => {
+          for (let i = 0; i < count; i++) {
+            const ageDays = dayIdx * 2 + i / (count || 1);
+            mockFeed.push({
+              cardName: "specimen",
+              ch: {
+                id: `mock-${dayIdx}-${i}`,
+                kind: "x402",
+                to: "0x1234567890abcdef1234567890abcdef12345678",
+                amount: (1.5 + i * 0.5 + dayIdx * 0.1).toFixed(6),
+                fee: "0.010000",
+                status: "settled",
+                tx: "0xabcdef1234567890abcdef1234567890abcdef12",
+                memo: `mock execution ${i + 1}`,
+                at: now - Math.floor(ageDays * 86400),
+              },
+            });
+          }
+        });
+        mockFeed.sort((a, b) => b.ch.at - a.ch.at);
+      }
+      setFeed(mockFeed);
       setKAgent(undefined);
       setKmap(new Map());
       return;
