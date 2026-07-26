@@ -122,10 +122,10 @@ ORDER BY ts
 #### Panel 5: API Request Duration by Route
 ```sql
 SELECT toStartOfInterval(timestamp, INTERVAL 5 MINUTE) AS ts,
-       bodyAttributes['http.route'] AS route,
+       attributes_string['http.route'] AS route,
        avg(durationNano) / 1000000 AS avg_ms
 FROM signoz_traces.distributed_signoz_index_v2
-WHERE bodyAttributes['service.name'] = 'glasspay-server'
+WHERE resources_string['service.name'] = 'glasspay-server'
   AND ts BETWEEN $start_datetime AND $end_datetime
 GROUP BY ts, route
 ORDER BY ts
