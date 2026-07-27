@@ -127,6 +127,55 @@
 .foot a { color: var(--body); text-decoration: none; font-weight: 500; }
 .foot a:hover { color: var(--ink); }
 
+/* Tabs for toggling between s0nder supply co. and Stripe Marketplace */
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-top: 22px;
+  background: var(--inset);
+  padding: 3px;
+  border-radius: 12px;
+  width: fit-content;
+}
+.tab {
+  all: unset;
+  cursor: pointer;
+  padding: 6px 14px;
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--label);
+  transition: all 0.2s var(--ease);
+}
+.tab:hover { color: var(--ink); }
+.tabActive {
+  background: var(--canvas);
+  color: var(--ink);
+  box-shadow: var(--shadow-panel);
+}
+
+.pdesc {
+  font-size: 11.5px;
+  color: var(--label);
+  margin: 2px 0 4px;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.linkBtn {
+  all: unset;
+  cursor: pointer;
+  color: var(--body);
+  font-weight: 500;
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.linkBtn:hover { color: var(--ink); }
+
 @media (max-width: 540px) {
   .wrap { padding: 40px 16px 64px; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }

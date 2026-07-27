@@ -38,15 +38,13 @@ import type { AppDeps } from "../deps";
 import { spendDeps, spendKey } from "../deps";
 import { recentFiatDecision } from "../stripe/decisions";
 
-const SERVER_INFO = { name: "glasspay", version: "0.17.2" };
-
-// Surfaced to clients at initialize. Claude Code's tool search (default-on since mid-2026)
-// keys discovery on this text and truncates at 2KB: keep it a compact routing guide.
-const INSTRUCTIONS = [
-  "remit is the agent's spending card: a scoped, revocable spending authority granted by the card owner. The connection itself is the card; it holds no funds of its own and every action is checked against the card's terms (per-payment cap, period budget, expiry, allowlists).",
-  "Tools: `card` reports status, terms and remaining budget (check it before the first spend). `pay` sends USDC to a recipient or settles an x402 payment requirement. `paid_fetch` fetches an HTTP resource and pays its 402 challenge automatically. `execute` calls an allowlisted contract within the card's contract terms. `issue_subcard` mints a narrower child card for a sub-agent and returns its connection URL (treat it as a secret). `revoke_subcard` kills a child card and its descendants instantly. On fiat-linked cards, `fiat_pay` buys over Visa rails (simulated, test mode) from the same budget and `card_credentials` reveals the linked test Visa for merchant checkouts.",
-  "A frozen card still answers `card` but refuses spends. Refusals name the violated term; read the message before retrying.",
-].join("\n\n");
+const SERVER_INFO = { name: "glasspay", version: "0.17.2" };  // Surfaced to clients at initialize. Claude Code's tool search (default-on since mid-2026)
+  // keys discovery on this text and truncates at 2KB: keep it a compact routing guide.
+  const INSTRUCTIONS = [
+    "remit is the agent's spending card: a scoped, revocable spending authority granted by the card owner. The connection itself is the card; it holds no funds of its own and every action is checked against the card's terms (per-payment cap, period budget, expiry, allowlists).",
+    "Tools: `card` reports status, terms and remaining budget (check it before the first spend). `pay` sends USDC to a recipient or settles an x402 payment requirement. `paid_fetch` fetches an HTTP resource and pays its 402 challenge automatically. `execute` calls an allowlisted contract within the card's contract terms. `issue_subcard` mints a narrower child card for a sub-agent and returns its connection URL (treat it as a secret). `revoke_subcard` kills a child card and its descendants instantly. On fiat-linked cards, `fiat_pay` buys over Visa rails (simulated, test mode) from the same budget, `card_credentials` reveals the linked test Visa, `shop_products` lists the Stripe product catalog, and `shop_buy` purchases a product from the catalog using the linked Visa.",
+    "A frozen card still answers `card` but refuses spends. Refusals name the violated term; read the message before retrying.",
+  ].join("\n\n");
 
 // ---------------------------------------------------------------------------
 // Result helpers
@@ -383,6 +381,73 @@ export function buildMcpServer(deps: AppDeps, card: CardRow): McpServer {
             cardholder_name: det.cardholder_name,
             last4: det.last4,
             note: "stripe test-mode card: works only against this stripe account's test environment",
+          };
+        }),
+    );
+
+    // ---- shop tools (Stripe product catalog, purchase via test Visa) ----
+    server.registerTool(
+      "shop_products",
+      {
+        title: "List Stripe product catalog",
+        description:
+          "Browse the merchant's Stripe product catalog. Returns available products with their prices (USD). Use this to discover what you can buy before calling shop_buy.",
+        inputSchema: {},
+        annotations: { readOnlyHint: true, openWorldHint: false },
+      },
+      async () =>
+        run(async () => {
+          const items = await stripe.fetchProductsAndPrices();
+          return {
+            merchant: "glasspay marketplace",
+            products: items.map((p) => ({
+              id: p.id,
+              name: p.name,
+              description: p.description,
+              price: p.priceCents !== null ? (p.priceCents / 100).toFixed(2) : "—",
+              type: p.type,
+              interval: p.interval,
+            })),
+          };
+        }),
+    );
+
+    server.registerTool(
+      "shop_buy",
+      {
+        title: "Buy a product from the Stripe catalog",
+        description:
+          "Purchase a product from the Stripe product catalog using this card's linked test Visa. The authorization is checked against this card's budget in real time — declines carry the reason (over_period_limit, card_frozen, ...). Call shop_products first to see available products and their IDs.",
+        inputSchema: {
+          product_id: z.string().describe("the product ID from shop_products (e.g. prod_xxx)"),
+        },
+        annotations: { destructiveHint: true, openWorldHint: false },
+      },
+      async (args: { product_id: string }) =>
+        run(async () => {
+          // Fetch catalog and find the product
+          const catalog = await stripe.fetchProductsAndPrices();
+          const product = catalog.find((p) => p.id === args.product_id);
+          if (!product) throw new RefusalError("unknown_product", `product ${args.product_id} not found in catalog`);
+          if (!product.priceCents || product.priceCents <= 0) {
+            throw new RefusalError("no_price", `product ${product.name} has no price`);
+          }
+          // every delegation IS a card: mint the linked test Visa on first need
+          const ic = await stripe.ensureCardForRemitCard(card.id);
+          if (!ic) throw new RefusalError("no_fiat_card", "no test-mode Visa could be linked to this card");
+          const auth = await stripe.createTestAuthorization({
+            cardId: ic,
+            amountCents: product.priceCents,
+            merchantName: "glasspay marketplace",
+          });
+          const decision = recentFiatDecision(auth.id);
+          const state = cardState(sd.store, card.id, now());
+          return {
+            approved: auth.approved,
+            reason: decision?.reason ?? auth.decline_reason ?? (auth.approved ? "in_budget" : "declined_upstream"),
+            product: { id: product.id, name: product.name, price: (product.priceCents / 100).toFixed(2) },
+            authorization_id: auth.id,
+            remaining_this_period: state?.remaining_this_period ?? null,
           };
         }),
     );

@@ -14,7 +14,7 @@ import s from "./shop.module.css";
 
 const BASE = shopApiBase(process.env.NEXT_PUBLIC_GLASSPAY_API);
 
-type Product = { id: string; name: string; price: string };
+type Product = { id: string; name: string; price: string; description?: string | null };
 type Catalog = { merchant: string; products: Product[] };
 type CheckoutResult = {
   approved: boolean;
@@ -26,7 +26,10 @@ type CheckoutResult = {
 
 export default function ShopPage() {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const [stripeCatalog, setStripeCatalog] = useState<Catalog | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [stripeLoadErr, setStripeLoadErr] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"s0nder" | "stripe">("s0nder");
 
   const [picked, setPicked] = useState<Product | null>(null);
   const [number, setNumber] = useState("");
@@ -47,6 +50,16 @@ export default function ShopPage() {
         setLoadErr(e instanceof Error ? e.message : String(e));
       }
     })();
+    (async () => {
+      try {
+        const res = await fetch(`${BASE}/shop/stripe-products`, { cache: "no-store" });
+        if (res.ok) {
+          setStripeCatalog((await res.json()) as Catalog);
+        }
+      } catch (e) {
+        setStripeLoadErr(e instanceof Error ? e.message : String(e));
+      }
+    })();
   }, []);
 
   // keep the browser tab in character (root layout titles the glasspay dashboard)
@@ -64,8 +77,12 @@ export default function ShopPage() {
     if (!picked) return;
     setPaying(true);
     setPayErr(null);
+    const endpoint =
+      activeTab === "stripe" && stripeCatalog?.products.some((p) => p.id === picked.id)
+        ? `${BASE}/shop/stripe-checkout`
+        : `${BASE}/shop/checkout`;
     try {
-      const res = await fetch(`${BASE}/shop/checkout`, {
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -91,14 +108,48 @@ export default function ShopPage() {
 
   const formReady = number.trim() !== "" && expMonth.trim() !== "" && expYear.trim() !== "" && cvc.trim() !== "";
 
+  const activeCatalog = activeTab === "stripe" ? stripeCatalog : catalog;
+  const activeMerchant =
+    activeTab === "stripe"
+      ? stripeCatalog?.merchant ?? "glasspay marketplace"
+      : catalog?.merchant ?? "s0nder supply co.";
+  const products = activeCatalog?.products ?? [];
+
   return (
     <div className={s.wrap}>
       <div className={s.inner}>
-        <div className={s.brand}>{catalog?.merchant ?? "s0nder supply co."}</div>
-        <div className={s.tag}>Everyday goods, shipped fast.</div>
+        <div className={s.brand}>{activeMerchant}</div>
+        <div className={s.tag}>
+          {activeTab === "stripe"
+            ? "Digital goods from the Stripe catalog."
+            : "Everyday goods, shipped fast."}
+        </div>
 
-        {loadErr && <p className={s.quiet}>Store is unavailable right now ({loadErr}). Refresh to retry.</p>}
-        {!loadErr && !catalog && (
+        {/* Store tabs */}
+        <div className={s.tabs}>
+          <button
+            className={`${s.tab} ${activeTab === "s0nder" ? s.tabActive : ""}`}
+            onClick={() => { setActiveTab("s0nder"); setPicked(null); setResult(null); setPayErr(null); }}
+          >
+            s0nder supply co.
+          </button>
+          {stripeCatalog && (
+            <button
+              className={`${s.tab} ${activeTab === "stripe" ? s.tabActive : ""}`}
+              onClick={() => { setActiveTab("stripe"); setPicked(null); setResult(null); setPayErr(null); }}
+            >
+              Stripe Marketplace
+            </button>
+          )}
+        </div>
+
+        {loadErr && activeTab === "s0nder" && (
+          <p className={s.quiet}>Store is unavailable right now ({loadErr}). Refresh to retry.</p>
+        )}
+        {stripeLoadErr && activeTab === "stripe" && (
+          <p className={s.quiet}>Stripe catalog unavailable ({stripeLoadErr}). Check Stripe env vars.</p>
+        )}
+        {!activeCatalog && activeTab === "s0nder" && !loadErr && (
           <div className={s.grid} aria-hidden>
             {Array.from({ length: 6 }, (_, i) => (
               <div key={i} className={s.skel}>
@@ -109,12 +160,24 @@ export default function ShopPage() {
             ))}
           </div>
         )}
+        {!activeCatalog && activeTab === "stripe" && !stripeLoadErr && (
+          <div className={s.grid} aria-hidden>
+            {Array.from({ length: 3 }, (_, i) => (
+              <div key={i} className={s.skel}>
+                <i />
+                <i />
+                <i />
+              </div>
+            ))}
+          </div>
+        )}
 
-        {catalog && (
+        {products.length > 0 && (
           <div className={s.grid}>
-            {catalog.products.map((p) => (
+            {products.map((p) => (
               <div key={p.id} className={s.product}>
                 <div className={s.pname}>{p.name}</div>
+                {p.description && <div className={s.pdesc}>{p.description}</div>}
                 <div className={s.pprice}>${p.price}</div>
                 <button
                   className={picked?.id === p.id ? `${s.buy} ${s.active}` : s.buy}
@@ -231,7 +294,16 @@ export default function ShopPage() {
             GlassPay
           </a>{" "}
           in Stripe test mode; every charge authorizes in real time against the card&apos;s on-chain budget, and
-          approved charges settle as real USDC transfers on Base.
+          approved charges settle as real USDC transfers on Base.{" "}
+          {stripeCatalog && (
+            <>
+              Your Stripe products appear in the{" "}
+              <button className={s.linkBtn} onClick={() => setActiveTab("stripe")}>
+                Stripe Marketplace
+              </button>
+              {" "}tab.
+            </>
+          )}
         </p>
       </div>
     </div>
