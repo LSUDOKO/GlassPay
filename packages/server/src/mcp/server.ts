@@ -428,9 +428,9 @@ export function buildMcpServer(deps: AppDeps, card: CardRow): McpServer {
           // Fetch catalog and find the product
           const catalog = await stripe.fetchProductsAndPrices();
           const product = catalog.find((p) => p.id === args.product_id);
-          if (!product) throw new RefusalError("unknown_product", `product ${args.product_id} not found in catalog`);
+          if (!product) throw new RefusalError("invalid_terms", `product ${args.product_id} not found in catalog`);
           if (!product.priceCents || product.priceCents <= 0) {
-            throw new RefusalError("no_price", `product ${product.name} has no price`);
+            throw new RefusalError("invalid_terms", `product ${product.name} has no price`);
           }
           // every delegation IS a card: mint the linked test Visa on first need
           const ic = await stripe.ensureCardForRemitCard(card.id);
