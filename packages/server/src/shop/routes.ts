@@ -17,6 +17,7 @@ const credentialsEqual = (a: string, b: string): boolean =>
   timingSafeEqual(createHash("sha256").update(a).digest(), createHash("sha256").update(b).digest());
 
 export const SHOP_MERCHANT = "s0nder supply co.";
+export const STRIPE_MERCHANT = "glasspay marketplace";
 
 // demo pricing: everything at or under $5.00, because approved charges settle as
 // REAL on-chain USDC (price + ~0.011 relayer fee) from a lightly-funded demo wallet.
@@ -47,6 +48,111 @@ export function shopRoutes(deps: AppDeps): Hono {
       products: SHOP_PRODUCTS.map((p) => ({ id: p.id, name: p.name, price: dollars(p.priceCents) })),
     }),
   );
+
+  // ---- Stripe product catalog (your products from Stripe Dashboard) ----
+  // Fetches live from Stripe's Products + Prices API, so any product you create
+  // in Stripe Dashboard appears here automatically. Cached ~60s per process.
+  let catalogCache: { products: Array<{ id: string; name: string; description: string | null; price: string; priceCents: number; type: string; interval: string | null }>; fetchedAt: number } | null = null;
+
+  app.get("/shop/stripe-products", async (c) => {
+    if (!deps.stripe) return c.json({ error: "stripe not configured" }, 503);
+    const now = Date.now();
+    if (catalogCache && now - catalogCache.fetchedAt < 60_000) {
+      return c.json({ merchant: STRIPE_MERCHANT, products: catalogCache.products });
+    }
+    try {
+      const items = await deps.stripe.fetchProductsAndPrices();
+      const products = items.map((p) => ({
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        price: p.priceCents !== null ? `${(p.priceCents / 100).toFixed(2)}` : "—",
+        priceCents: p.priceCents ?? 0,
+        type: p.type,
+        interval: p.interval,
+      }));
+      catalogCache = { products, fetchedAt: now };
+      return c.json({ merchant: STRIPE_MERCHANT, products });
+    } catch (e) {
+      return c.json({ error: `failed to fetch products: ${e instanceof Error ? e.message : String(e)}` }, 502);
+    }
+  });
+
+  app.post("/shop/stripe-checkout", async (c) => {
+    if (!deps.stripe) return c.json({ error: "stripe not configured" }, 503);
+    if (!checkoutLimit.allow(clientIp(c), Date.now())) return c.json({ error: "too many requests" }, 429);
+
+    let body: {
+      product_id?: unknown;
+      card?: { number?: unknown; exp_month?: unknown; exp_year?: unknown; cvc?: unknown } | null;
+    };
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "malformed body" }, 400);
+    }
+    const card = body.card;
+    if (
+      typeof body.product_id !== "string" ||
+      !card ||
+      typeof card !== "object" ||
+      typeof card.number !== "string" ||
+      (typeof card.exp_month !== "string" && typeof card.exp_month !== "number") ||
+      (typeof card.exp_year !== "string" && typeof card.exp_year !== "number") ||
+      typeof card.cvc !== "string"
+    ) {
+      return c.json({ error: "malformed body" }, 400);
+    }
+
+    // Fetch product from Stripe to get the price
+    let catalog: import("../stripe/client").StripeCatalogProduct[];
+    try {
+      catalog = await deps.stripe.fetchProductsAndPrices();
+    } catch {
+      return c.json({ error: "failed to fetch catalog" }, 502);
+    }
+    const product = catalog.find((p) => p.id === body.product_id);
+    if (!product) return c.json({ error: "unknown product" }, 404);
+    if (!product.priceCents || product.priceCents <= 0) {
+      return c.json({ error: "product has no price" }, 400);
+    }
+
+    const number = card.number.replace(/[\s-]/g, "");
+    const expMonth = Number(card.exp_month);
+    let expYear = Number(card.exp_year);
+    if (!/^\d{12,19}$/.test(number) || !Number.isInteger(expMonth) || !Number.isInteger(expYear)) {
+      return c.json({ error: "malformed card" }, 400);
+    }
+    if (expYear < 100) expYear += 2000;
+
+    const last4 = number.slice(-4);
+    const candidates = (await deps.stripe.listActiveCardSummaries()).filter(
+      (s) => s.last4 === last4 && Number(s.exp_month) === expMonth && Number(s.exp_year) === expYear,
+    );
+    let match: { cardId: string; last4: string } | null = null;
+    for (const cand of candidates) {
+      const det = await deps.stripe.getCardDetails(cand.id, { reveal: true });
+      if (credentialsEqual(`${det.number}|${det.exp_month}|${det.exp_year}|${det.cvc}`, `${number}|${expMonth}|${expYear}|${card.cvc}`)) {
+        match = { cardId: cand.id, last4: det.last4 };
+        break;
+      }
+    }
+    if (!match) return c.json({ approved: false, reason: "card_not_recognized" });
+
+    const auth = await deps.stripe.createTestAuthorization({
+      cardId: match.cardId,
+      amountCents: product.priceCents,
+      merchantName: STRIPE_MERCHANT,
+    });
+    const decision = recentFiatDecision(auth.id);
+    return c.json({
+      approved: auth.approved,
+      reason: decision?.reason ?? auth.decline_reason ?? (auth.approved ? "approved" : "declined"),
+      authorization_id: auth.id,
+      product: { id: product.id, name: product.name, price: (product.priceCents / 100).toFixed(2) },
+      last4: match.last4,
+    });
+  });
 
   app.post("/shop/checkout", async (c) => {
     if (!deps.stripe) return c.json({ error: "shop disabled" }, 503);

@@ -40,6 +40,41 @@ export type IssuingAuthorization = {
 
 type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 
+/** Product from Stripe's catalog with embedded default price (via expand[]). */
+type StripeProductRaw = {
+  id: string;
+  name: string;
+  description: string | null;
+  active: boolean;
+  metadata: Record<string, string>;
+  created: number;
+  /** When expanded via expand[]=data.default_price, this is the full price object. */
+  default_price?: string | StripePriceRaw | null;
+};
+
+/** A price from Stripe's Prices API. */
+export type StripePriceRaw = {
+  id: string;
+  product: string;
+  active: boolean;
+  currency: string;
+  unit_amount: number | null;
+  type: "one_time" | "recurring";
+  recurring: { interval: string; interval_count: number } | null;
+};
+
+/** Processed product + price ready for the catalog endpoint. */
+export type StripeCatalogProduct = {
+  id: string;
+  name: string;
+  description: string | null;
+  priceId: string | null;
+  priceCents: number | null;
+  currency: string;
+  type: "one_time" | "recurring";
+  interval: string | null;
+};
+
 type RawIssuingCard = {
   id: string;
   last4: string;
@@ -207,6 +242,32 @@ export class StripeClient {
       cardholder_name: card.cardholder?.name ?? null,
       metadata: card.metadata ?? {},
     };
+  }
+
+  // ---- Product catalog (Stripe Products + Prices API, not Issuing) ----
+
+  /** Fetch active products with their default prices from Stripe's catalog.
+   * Uses expand[]=data.default_price so each product arrives with its price
+   * embedded — no separate /v1/prices call needed. */
+  async fetchProductsAndPrices(): Promise<StripeCatalogProduct[]> {
+    const params = new URLSearchParams();
+    params.set("active", "true");
+    params.set("limit", "100");
+    params.append("expand[]", "data.default_price");
+    const res = await this.request<{ data?: StripeProductRaw[] }>("GET", "/v1/products", params);
+    return (res.data ?? []).map((p) => {
+      const pr = p.default_price as StripePriceRaw | null | undefined;
+      return {
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        priceId: pr?.id ?? null,
+        priceCents: pr?.unit_amount ?? null,
+        currency: pr?.currency ?? "usd",
+        type: pr?.type ?? "one_time",
+        interval: pr?.recurring?.interval ?? null,
+      };
+    });
   }
 
   /** Test-helper authorization: fires the real-time auth webhook end-to-end (the demo
