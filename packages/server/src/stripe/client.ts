@@ -270,13 +270,40 @@ export class StripeClient {
     });
   }
 
+  /** Fund the Stripe test-mode Issuing balance so test authorizations don't get
+   * pre-declined with insufficient_funds. Test mode only; no-op on live keys.
+   * Called once at most (test funds persist across the account lifetime). */
+  private ensureTestFundsPromise: Promise<void> | null = null;
+  private async ensureTestFunds(): Promise<void> {
+    if (this.ensureTestFundsPromise) return this.ensureTestFundsPromise;
+    this.ensureTestFundsPromise = (async () => {
+      // Fund $1000 into the test Issuing balance — enough for any demo purchase.
+      // This is a test-helper endpoint; it only works in test mode and costs nothing.
+      const params = new URLSearchParams();
+      params.set("amount", "100000"); // $1000 in cents
+      params.set("currency", "usd");
+      try {
+        await this.request<unknown>("POST", "/v1/test_helpers/issuing/fund_balance", params);
+      } catch {
+        // Non-critical: if funding fails, authorizations may get declined upstream.
+        // Swallow the error so the caller doesn't fail — the authorization itself
+        // will surface the insufficient_funds reason naturally.
+      }
+    })();
+    return this.ensureTestFundsPromise;
+  }
+
   /** Test-helper authorization: fires the real-time auth webhook end-to-end (the demo
-   * shop's purchase trigger). Test mode only: the path does not exist on live keys. */
+   * shop's purchase trigger). Test mode only: the path does not exist on live keys.
+   * Auto-funds the test Issuing balance on first call so test-mode auths never get
+   * pre-declined by Stripe for insufficient_funds. */
   async createTestAuthorization(args: {
     cardId: string;
     amountCents: number;
     merchantName: string;
   }): Promise<IssuingAuthorization> {
+    // Ensure the test Issuing balance has funds before authorizing
+    await this.ensureTestFunds();
     const params = new URLSearchParams();
     params.set("card", args.cardId);
     params.set("amount", String(args.amountCents));
