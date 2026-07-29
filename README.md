@@ -1,15 +1,24 @@
-# GlassPay
+<div align="center">
+
+# 💳 GlassPay
 
 **The agentic card — fully instrumented with OpenTelemetry + SigNoz.**
+
+<img alt="glasspay" src="https://github.com/user-attachments/assets/de830a37-10ad-4e9d-a528-4cf0cd682bef" width="80%" />
 
 [![SigNoz Hackathon](https://img.shields.io/badge/SigNoz-Hackathon-3021ff)](https://signoz.io)
 [![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-Instrumented-3021ff)](https://opentelemetry.io)
 [![Base Mainnet](https://img.shields.io/badge/Base-Mainnet-0052FF)](https://base.org)
 [![ERC-7710](https://img.shields.io/badge/ERC-7710-blue)](https://eips.ethereum.org/EIPS/eip-7710)
 
-Issue scoped, revocable spending cards from your wallet. Any agent plugs one in and pays within your limits. No keys, no gas, dead the moment you revoke.
+<br />
 
-Built on MetaMask Smart Accounts (ERC-7710), settled gaslessly by 1Shot, pays the open web with x402, plugged into any agent over MCP.
+Issue scoped, revocable spending cards from your wallet. Any agent plugs one in and pays within your limits.<br />
+**No keys, no gas, dead the moment you revoke.**
+
+*Built on MetaMask Smart Accounts (ERC-7710), settled gaslessly by 1Shot, pays the open web with x402, plugged into any agent over MCP.*
+
+</div>
 
 ---
 
