@@ -1,3 +1,7 @@
+<div align="center" >
+   <img width="592" height="421" alt="Gemini_Generated_Image_hxmu4nhxmu4nhxmu-removebg-preview" src="https://github.com/user-attachments/assets/1dffe4ac-46ce-4b46-860d-147ba50838a1" />
+</div>
+
 # GlassPay
 
 Agentic spending cards: scoped, revocable payment delegations that any AI agent can plug in and pay with, fully instrumented with OpenTelemetry and SigNoz.
@@ -7,7 +11,7 @@ Agentic spending cards: scoped, revocable payment delegations that any AI agent 
 [![Base Mainnet](https://img.shields.io/badge/Base-Mainnet-0052FF)](https://base.org)
 [![ERC-7710](https://img.shields.io/badge/ERC-7710-blue)](https://eips.ethereum.org/EIPS/eip-7710)
 
-Issue scoped, revocable spending cards from your wallet. Any agent plugs one in and pays within your limits: no keys, no gas, dead the moment you revoke. Built on MetaMask Smart Accounts (ERC-7710), settled gaslessly by 1Shot, pays the open web with x402, and plugs into any agent over MCP.
+Issue scoped, revocable spending cards from your wallet. Any agent plugs one in and pays within your limits: no keys, no gas, dead the moment you revoke. Built on Smart Accounts (ERC-7710), settled gaslessly by 1Shot, pays the open web with x402, and plugs into any agent over MCP.
 
 ---
 
@@ -314,41 +318,45 @@ Your AI agent can then use SigNoz MCP tools to query traces and logs from GlassP
 
 ### Screenshots
 
-Live screenshots from the SigNoz dashboard. Drop the matching files into `docs/screenshots/` as `img-01.png` through `img-13.png` (see [docs/screenshots/README.md](docs/screenshots/README.md) for the mapping; the numbering also matches [docs/medium-post.md](docs/medium-post.md)).
 
 **Traces**
 
-![IMG-1: Trace waterfall - HTTP root span with child spans (mcp_tool_card, fetch, sqlite, stripe_webhook_auth) hanging below](docs/screenshots/img-01.png)
+<img width="1908" height="942" alt="swappy-20260731-190527" src="https://github.com/user-attachments/assets/8e328e2e-e5f0-4fe9-a246-0f2a431c35fd" />
 
-![IMG-2: Traces list filtered to service.name = glasspay-server, showing endpoint latency by route](docs/screenshots/img-02.png)
+<img width="1904" height="939" alt="swappy-20260731-231952" src="https://github.com/user-attachments/assets/b48df685-119d-4c1e-b87b-9e798a571349" />
 
-![IMG-3: Trace search for name LIKE 'mcp_tool_%' - every agent tool call with duration, card_id, and mcp.is_error](docs/screenshots/img-03.png)
+<img width="1903" height="952" alt="swappy-20260731-185624" src="https://github.com/user-attachments/assets/67c55376-2b20-4b45-bff5-da3334df6773" />
 
-![IMG-4: An erroring mcp_tool_* span expanded - mcp.refusal_code and mcp.error_message attributes](docs/screenshots/img-04.png)
 
 **Metrics**
 
-![IMG-5: Metrics explorer showing the five glasspay.* metrics](docs/screenshots/img-05.png)
+<img width="1846" height="917" alt="swappy-20260731-232129" src="https://github.com/user-attachments/assets/6adf56b2-aec7-4c05-94d8-47bcf03021b5" />
 
-![IMG-6: A metric time-series graph, e.g. glasspay.cards_issued_total climbing](docs/screenshots/img-06.png)
 
 **Logs**
 
-![IMG-7: Logs explorer filtered to card_event:* - lifecycle lines with severity and card_id](docs/screenshots/img-07.png)
+<img width="1908" height="933" alt="swappy-20260731-185656" src="https://github.com/user-attachments/assets/79e9c153-8d7a-4213-928d-3599d958f573" />
 
-![IMG-8: A refusal log expanded showing trace_id - the log-to-trace correlation jump](docs/screenshots/img-08.png)
 
 **Dashboards and Alerts**
 
-![IMG-9: Claude Code answering a query through the SigNoz MCP server](docs/screenshots/img-09.png)
+<img width="954" height="724" alt="swappy-20260731-232540" src="https://github.com/user-attachments/assets/595d3729-3f69-435a-a46e-1b07eb2a0193" />
 
-![IMG-10: The GlassPay dashboard - Cards Issued, Active Cards, USDC Spent, API Errors, MCP Tool Usage, Refusal Reasons](docs/screenshots/img-10.png)
+<img width="1918" height="954" alt="swappy-20260731-191321" src="https://github.com/user-attachments/assets/78f648c2-e63d-4332-9d9c-4f88f703b43a" />
 
-![IMG-11: SigNoz Service Map - glasspay-server with edges to Stripe, Venice AI, 1Shot, and SQLite](docs/screenshots/img-11.png)
+<img width="1851" height="603" alt="swappy-20260727-215523" src="https://github.com/user-attachments/assets/74e31813-cd5d-480a-8971-59697237ebfe" />
 
-![IMG-12: SigNoz Cost Meter - per-signal telemetry volume by service](docs/screenshots/img-12.png)
+<img width="922" height="467" alt="swappy-20260727-215311" src="https://github.com/user-attachments/assets/4be239bc-6492-47a2-af68-17161cd18d98" />
 
-![IMG-13: SigNoz Alerts list - High Error Rate, Refusal Spike, Webhook SLA](docs/screenshots/img-13.png)
+<img width="911" height="323" alt="swappy-20260727-215324" src="https://github.com/user-attachments/assets/9f69dc3f-da86-4464-bddf-a11fb7a69b98" />
+
+<img width="913" height="331" alt="swappy-20260727-215333" src="https://github.com/user-attachments/assets/7b558d32-a152-410a-9501-50f34343b2d8" />
+
+<img width="914" height="662" alt="swappy-20260727-215346" src="https://github.com/user-attachments/assets/1df182b1-ccda-424c-b607-580e6d1a6794" />
+
+<img width="909" height="668" alt="swappy-20260727-215357" src="https://github.com/user-attachments/assets/4554aabb-bb5a-4a19-b523-765477756886" />
+
+<img width="917" height="338" alt="swappy-20260727-215406" src="https://github.com/user-attachments/assets/0dfa165e-7173-48bf-989e-4af9f6af230b" />
 
 ---
 
