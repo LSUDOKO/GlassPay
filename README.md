@@ -419,41 +419,6 @@ Catalog prices are all $5 or less because approved purchases move real USDC.
 
 ---
 
-## Cook Off Tracks
-
-Built for the MetaMask Smart Accounts Kit x 1Shot API x Venice AI Dev Cook Off (2026). The hard gate (Smart Accounts Kit in the main flow) is the product itself: every card IS a SAK delegation, signed by a Privy-provisioned embedded smart account (Smart Accounts are signer-agnostic), and every spend redeems that delegation on-chain.
-
-| Track | What GlassPay does |
-|---|---|
-| x402 + ERC-7710 | `paid_fetch` answers HTTP 402 by paying through the card's 7710 delegation; real x402 v2 flows on Base mainnet, USDC settled from the user's wallet |
-| Best Agent experience | One URL is the whole integration: `claude mcp add ... /c/<secret>/mcp` and the agent can spend within terms; typed refusals; OAuth lane for clients that want consent UX |
-| Agent-to-agent coordination | `issue_subcard` redelegates narrower authority to sub-agents (caps only nest downward); `revoke_subcard` and the cascade nuke kill whole subtrees with one signature |
-| Venice AI | The dashboard's issue modal compiles plain language into signed card terms (Venice drafts, a verified registry resolves every address, the user reviews and signs) |
-| 1Shot Relayer | Every redemption rides the 1Shot Public Relayer on Base mainnet, gasless, fees in USDC; the user's 7702 smart-account code deploys via the relayer on first spend |
-
-### Code usage (per track)
-
-Direct links to the exact code behind each track.
-
-**Smart Accounts Kit**
-
-- **Advanced Permissions (ERC-7715): not used.** remit grants spending authority through programmatic ERC-7710 Delegations, whose caveat set is richer than the 7715 grant catalog allows, so there is no `wallet_requestExecutionPermissions` path. Everything below is ERC-7710.
-- **Delegations, create:** [`issueRootCard`](https://github.com/s0nderlabs/remit/blob/main/packages/engine/src/issuance.ts#L53) compiles human terms into caveats ([`compileCard`](https://github.com/s0nderlabs/remit/blob/main/packages/engine/src/compiler.ts#L270)), builds the delegation ([`buildRootDelegation`](https://github.com/s0nderlabs/remit/blob/main/packages/engine/src/delegations.ts#L93)), and signs it with the user's smart account ([`signWithSmartAccount`](https://github.com/s0nderlabs/remit/blob/main/packages/engine/src/delegations.ts#L156)).
-- **Delegations, redeem:** [`spend.ts`](https://github.com/s0nderlabs/remit/blob/main/packages/engine/src/spend.ts#L582) ships the leaf-first `permissionContext` to the relayer, which calls `DelegationManager.redeemDelegations` on-chain.
-- **Redelegation, create:** [`issueSubCard`](https://github.com/s0nderlabs/remit/blob/main/packages/engine/src/issuance.ts#L225) attenuates the parent's terms (caps only narrow) and builds a child delegation whose authority binds to the parent delegation's hash ([`buildChildDelegation`](https://github.com/s0nderlabs/remit/blob/main/packages/engine/src/delegations.ts#L110)). This is the agent-to-agent sub-card path.
-- **x402, server:** the ERC-7710 x402 facilitator ([`facilitatorRoutes`](https://github.com/s0nderlabs/remit/blob/main/packages/server/src/facilitator/routes.ts#L51): `/supported`, `/verify`, `/settle`) and the demo seller that emits the 402 challenge ([`sellerRoutes`](https://github.com/s0nderlabs/remit/main/packages/server/src/seller/routes.ts#L21), [`assetTransferMethod: \"erc7710\"`](https://github.com/s0nderlabs/remit/blob/main/packages/server/src/seller/routes.ts#L34)).
-- **x402, client (ERC-7710 asset transfer method):** [`buildX402Payload`](https://github.com/s0nderlabs/remit/blob/main/packages/engine/src/x402.ts#L64) carves a payment leaf and encodes the delegation chain into the x402 `permissionContext`; the `erc7710` asset-transfer method is [required here](https://github.com/s0nderlabs/remit/blob/main/packages/engine/src/x402.ts#L56).
-
-**1Shot API**
-
-- Every redemption rides the 1Shot Public Relayer: [`Relayer.send`](https://github.com/s0nderlabs/remit/blob/main/packages/engine/src/relayer.ts#L135) posts `relayer_send7710Transaction` to `relayer.1shotapi.com` ([endpoint](https://github.com/s0nderlabs/remit/blob/main/packages/engine/src/relayer.ts#L60)); the spend call site is [`spend.ts#L582`](https://github.com/s0nderlabs/remit/blob/main/packages/engine/src/spend.ts#L582).
-
-**Venice AI**
-
-- The natural-language card compiler calls Venice: [`veniceChat`](https://github.com/s0nderlabs/remit/blob/main/packages/server/src/venice/client.ts#L20) (OpenAI-wire `chat/completions`), orchestrated by [`compileIntent`](https://github.com/s0nderlabs/remit/blob/main/packages/server/src/venice/compiler.ts#L98), which turns a plain-language request into a plan whose named entities the server resolves against its own verified address registry.
-
----
-
 ## Documentation
 
 | Document | Contents |
