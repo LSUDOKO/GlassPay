@@ -62,6 +62,7 @@ your wallet (EIP-7702 smart account)
 | Demo video | [YouTube](https://vimeo.com/1214671814?share=copy&fl=sv&fe=ci) |
 | Docs | https://glass-pay.vercel.app/docs |
 | Demo Link | https://glass-pay.vercel.app |
+| Medium Blog | https://medium.com/@adoranto737/i-gave-an-ai-agent-a-credit-card-then-watched-every-move-it-made-with-signoz-d6b6cdd9d5b8?sharedUserId=adoranto737 |
 
 Everything runs on Base mainnet with real USDC; the only simulated leg is the Visa rail (Stripe test-mode Issuing), labeled honestly wherever it appears.
 
