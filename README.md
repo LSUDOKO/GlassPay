@@ -313,6 +313,44 @@ claude mcp add signoz http://localhost:8000 \
 
 Your AI agent can then use SigNoz MCP tools to query traces and logs from GlassPay, create and modify dashboards, set up and investigate alerts, and run ClickHouse queries against the observability data.
 
+### Screenshots
+
+Live screenshots from the SigNoz dashboard. Drop the matching files into `docs/screenshots/` as `img-01.png` through `img-13.png` (see [docs/screenshots/README.md](docs/screenshots/README.md) for the mapping; the numbering also matches [docs/medium-post.md](docs/medium-post.md)).
+
+**Traces**
+
+![IMG-1: Trace waterfall - HTTP root span with child spans (mcp_tool_card, fetch, sqlite, stripe_webhook_auth) hanging below](docs/screenshots/img-01.png)
+
+![IMG-2: Traces list filtered to service.name = glasspay-server, showing endpoint latency by route](docs/screenshots/img-02.png)
+
+![IMG-3: Trace search for name LIKE 'mcp_tool_%' - every agent tool call with duration, card_id, and mcp.is_error](docs/screenshots/img-03.png)
+
+![IMG-4: An erroring mcp_tool_* span expanded - mcp.refusal_code and mcp.error_message attributes](docs/screenshots/img-04.png)
+
+**Metrics**
+
+![IMG-5: Metrics explorer showing the five glasspay.* metrics](docs/screenshots/img-05.png)
+
+![IMG-6: A metric time-series graph, e.g. glasspay.cards_issued_total climbing](docs/screenshots/img-06.png)
+
+**Logs**
+
+![IMG-7: Logs explorer filtered to card_event:* - lifecycle lines with severity and card_id](docs/screenshots/img-07.png)
+
+![IMG-8: A refusal log expanded showing trace_id - the log-to-trace correlation jump](docs/screenshots/img-08.png)
+
+**Dashboards and Alerts**
+
+![IMG-9: Claude Code answering a query through the SigNoz MCP server](docs/screenshots/img-09.png)
+
+![IMG-10: The GlassPay dashboard - Cards Issued, Active Cards, USDC Spent, API Errors, MCP Tool Usage, Refusal Reasons](docs/screenshots/img-10.png)
+
+![IMG-11: SigNoz Service Map - glasspay-server with edges to Stripe, Venice AI, 1Shot, and SQLite](docs/screenshots/img-11.png)
+
+![IMG-12: SigNoz Cost Meter - per-signal telemetry volume by service](docs/screenshots/img-12.png)
+
+![IMG-13: SigNoz Alerts list - High Error Rate, Refusal Spike, Webhook SLA](docs/screenshots/img-13.png)
+
 ---
 
 ## Getting Started
@@ -426,6 +464,8 @@ Catalog prices are all $5 or less because approved purchases move real USDC.
 | [docs/architecture.md](docs/architecture.md) | Full system architecture with all 16 SigNoz use cases (traces, metrics, logs, dashboards, alerts, saved views, cost control, service map, SigNoz MCP) |
 | [docs/signoz-verification.md](docs/signoz-verification.md) | Step-by-step guide to verify every SigNoz feature in the live deployment |
 | [docs/blog-post.md](docs/blog-post.md) | The observability story: instrumenting agentic payments with OpenTelemetry + SigNoz |
+| [docs/medium-post.md](docs/medium-post.md) | Medium-ready version of the observability story with screenshot placeholders (IMG-1..IMG-13) |
+| [docs/screenshots/README.md](docs/screenshots/README.md) | Which screenshot goes where: drop files as `img-01.png`..`img-13.png` |
 | [docs/video-script.md](docs/video-script.md) | Demo video script (3 minutes) |
 | [CHANGELOG.md](CHANGELOG.md) | Release history |
 
