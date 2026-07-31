@@ -25,7 +25,6 @@ Issue scoped, revocable spending cards from your wallet. Any agent plugs one in 
 - [Environment Variables](#environment-variables)
 - [Security Model](#security-model)
 - [Demo Merchant](#demo-merchant)
-- [Cook Off Tracks](#cook-off-tracks)
 - [Documentation](#documentation)
 
 ---
