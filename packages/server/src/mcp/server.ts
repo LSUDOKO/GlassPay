@@ -6,7 +6,10 @@
 // themselves ("over_period_limit, remaining 3.20, resets at ...") instead of crashing.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { trace, SpanStatusCode } from "@opentelemetry/api";
 import { z } from "zod";
+
+const mcpTracer = trace.getTracer("glasspay-server");
 import { encodeFunctionData, parseAbi, toFunctionSelector, type Address, type Hex } from "viem";
 import {
   decodePaymentRequiredHeader,
@@ -70,14 +73,50 @@ function failed(message: string): ToolResult {
   };
 }
 
-async function run(fn: () => Promise<unknown>): Promise<ToolResult> {
-  try {
-    return ok(await fn());
-  } catch (e) {
-    if (e instanceof RefusalError) return refused(e);
-    if (e instanceof EngineError) return failed(`${e.stage}: ${e.message}`);
-    return failed(e instanceof Error ? e.message : String(e));
-  }
+// Every tool call is wrapped in an mcp_tool_<name> span (visible in SigNoz as its
+// own trace with card_id + outcome attributes), so agent activity is fully
+// observable: which tool, how long, did it error, on which card, and if it was
+// refused — the typed refusal code lands on the span for filtering.
+async function run(toolName: string, cardId: string, fn: () => Promise<unknown>): Promise<ToolResult> {
+  return mcpTracer.startActiveSpan(`mcp_tool_${toolName}`, async (span) => {
+    span.setAttribute("mcp.tool", toolName);
+    span.setAttribute("mcp.kind", "tool_call");
+    span.setAttribute("card_id", cardId);
+    try {
+      const result = await (async (): Promise<ToolResult> => {
+        try {
+          return ok(await fn());
+        } catch (e) {
+          if (e instanceof RefusalError) return refused(e);
+          if (e instanceof EngineError) return failed(`${e.stage}: ${e.message}`);
+          return failed(e instanceof Error ? e.message : String(e));
+        }
+      })();
+      const isError = result.isError ?? false;
+      span.setAttribute("mcp.is_error", isError);
+      if (isError) {
+        span.setStatus({ code: SpanStatusCode.ERROR, message: "tool call failed" });
+        // surface the typed refusal code + message (over_period_limit, merchant_not_allowed, ...)
+        const first = result.content[0];
+        if (first && first.type === "text") {
+          try {
+            const parsed = JSON.parse(first.text) as { code?: string; message?: string };
+            if (parsed.code) span.setAttribute("mcp.refusal_code", parsed.code);
+            if (parsed.message) span.setAttribute("mcp.error_message", parsed.message);
+          } catch {
+            /* body not JSON — ignore */
+          }
+        }
+      }
+      return result;
+    } catch (e) {
+      span.recordException(e as Error);
+      span.setStatus({ code: SpanStatusCode.ERROR, message: e instanceof Error ? e.message : String(e) });
+      throw e;
+    } finally {
+      span.end();
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -114,7 +153,7 @@ export function buildMcpServer(deps: AppDeps, card: CardRow): McpServer {
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     async () =>
-      run(async () => {
+      run("card", card.id, async () => {
         const state = cardState(sd.store, card.id, now());
         // Agent-facing timestamps are rendered as ISO 8601, never raw Unix epochs:
         // a bare epoch invites the consuming model to misconvert it (observed: a card
@@ -165,7 +204,7 @@ export function buildMcpServer(deps: AppDeps, card: CardRow): McpServer {
         annotations: { destructiveHint: true, idempotentHint: true, openWorldHint: false },
       },
       async (args: { to: string; amount: string; memo?: string; idempotency_key?: string }) =>
-        run(() =>
+        run("pay", card.id, () =>
           locked(() =>
             spend(sd, card.id, {
               kind: "pay",
@@ -195,7 +234,7 @@ export function buildMcpServer(deps: AppDeps, card: CardRow): McpServer {
         annotations: { destructiveHint: true, openWorldHint: true },
       },
       async (args: { url: string; max_price?: string }) =>
-        run(async () => {
+        run("paid_fetch", card.id, async () => {
           ssrfGuard(args.url);
           const first = await fetch(args.url, { redirect: "manual" });
           if (first.status !== 402) {
@@ -307,7 +346,7 @@ export function buildMcpServer(deps: AppDeps, card: CardRow): McpServer {
         annotations: { destructiveHint: true, openWorldHint: false },
       },
       async (args: { amount: string; merchant?: string }) =>
-        run(async () => {
+        run("fiat_pay", card.id, async () => {
           // every delegation IS a card: mint the linked test Visa on first need
           const ic = await stripe.ensureCardForRemitCard(card.id);
           if (!ic) throw new RefusalError("no_fiat_card", "no test-mode Visa could be linked to this card (no cardholder on the stripe account)");
@@ -367,7 +406,7 @@ export function buildMcpServer(deps: AppDeps, card: CardRow): McpServer {
         annotations: { readOnlyHint: true, openWorldHint: false },
       },
       async () =>
-        run(async () => {
+        run("card_credentials", card.id, async () => {
           // every delegation IS a card: mint the linked test Visa on first need
           const ic = await stripe.ensureCardForRemitCard(card.id);
           if (!ic) throw new RefusalError("no_fiat_card", "no test-mode Visa could be linked to this card (no cardholder on the stripe account)");
@@ -396,7 +435,7 @@ export function buildMcpServer(deps: AppDeps, card: CardRow): McpServer {
         annotations: { readOnlyHint: true, openWorldHint: false },
       },
       async () =>
-        run(async () => {
+        run("shop_products", card.id, async () => {
           const items = await stripe.fetchProductsAndPrices();
           return {
             merchant: "glasspay marketplace",
@@ -424,7 +463,7 @@ export function buildMcpServer(deps: AppDeps, card: CardRow): McpServer {
         annotations: { destructiveHint: true, openWorldHint: false },
       },
       async (args: { product_id: string }) =>
-        run(async () => {
+        run("shop_buy", card.id, async () => {
           // Fetch catalog and find the product
           const catalog = await stripe.fetchProductsAndPrices();
           const product = catalog.find((p) => p.id === args.product_id);
@@ -486,7 +525,7 @@ export function buildMcpServer(deps: AppDeps, card: CardRow): McpServer {
         annotations: { destructiveHint: true, idempotentHint: true, openWorldHint: false },
       },
       async (args: { calls: Array<{ target: string; method?: string; args?: Array<string | number | boolean>; data?: string }>; memo?: string; idempotency_key?: string }) =>
-        run(() =>
+        run("execute", card.id, () =>
           locked(() => {
             const executions = args.calls.map((call) => encodeScopedCall(card.terms, call));
             return spend(sd, card.id, {
@@ -543,7 +582,7 @@ export function buildMcpServer(deps: AppDeps, card: CardRow): McpServer {
         annotations: { openWorldHint: false },
       },
       async (args: { name: string; terms: unknown }) =>
-        run(async () => {
+        run("issue_subcard", card.id, async () => {
           const issued = await issueSubCard({ store: sd.store }, {
             parentCardId: card.id,
             name: args.name,
@@ -567,7 +606,7 @@ export function buildMcpServer(deps: AppDeps, card: CardRow): McpServer {
         annotations: { destructiveHint: true, idempotentHint: true, openWorldHint: false },
       },
       async (args: { card_id: string }) =>
-        run(async () => {
+        run("revoke_subcard", card.id, async () => {
           agentRevokeSubcard(sd.store, card.id, args.card_id);
           return { status: "revoked", card_id: args.card_id };
         }),

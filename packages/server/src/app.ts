@@ -21,23 +21,26 @@ export function createApp(deps: AppDeps): Hono {
   const app = new Hono();
   const otel = trace.getTracer("glasspay-server");
 
-  // OpenTelemetry middleware: wraps every request in a span with route pattern,
-  // method, status code, and auth info. Visible in SigNoz traces.
+  // OpenTelemetry middleware: wraps every request in a root span with route pattern,
+  // method, status code, and auth info. startActiveSpan makes it the ACTIVE span for
+  // the whole handler, so every child span (auto-instrumented fetch/DB, mcp_tool_*,
+  // stripe_webhook_auth, ...) waterfalls under it as one distributed trace in SigNoz.
   app.use("*", async (c, next) => {
-    const span = otel.startSpan(`HTTP ${c.req.method} ${c.req.routePath ?? c.req.path}`);
-    span.setAttribute("http.method", c.req.method);
-    span.setAttribute("http.url", c.req.path);
-    span.setAttribute("http.route", c.req.routePath ?? c.req.path);
-    try {
-      await next();
-    } catch (e) {
-      span.recordException(e as Error);
-      span.setStatus({ code: SpanStatusCode.ERROR, message: e instanceof Error ? e.message : String(e) });
-      throw e;
-    } finally {
-      span.setAttribute("http.status_code", c.res.status);
-      span.end();
-    }
+    await otel.startActiveSpan(`HTTP ${c.req.method} ${c.req.routePath ?? c.req.path}`, async (span) => {
+      span.setAttribute("http.method", c.req.method);
+      span.setAttribute("http.url", c.req.path);
+      span.setAttribute("http.route", c.req.routePath ?? c.req.path);
+      try {
+        await next();
+      } catch (e) {
+        span.recordException(e as Error);
+        span.setStatus({ code: SpanStatusCode.ERROR, message: e instanceof Error ? e.message : String(e) });
+        throw e;
+      } finally {
+        span.setAttribute("http.status_code", c.res.status);
+        span.end();
+      }
+    });
   });
 
   // OAuth lane storage rides the same sqlite database as the engine store
