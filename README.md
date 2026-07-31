@@ -59,7 +59,9 @@ your wallet (EIP-7702 smart account)
 | Demo merchant (accepts the cards' Visas) | deploy your own |
 | API + MCP endpoint | deploy your own |
 | Source (this repo) | https://github.com/LSUDOKO/GlassPay |
-| Demo video | [YouTube](https://youtu.be/ymRo31OBZ8c) |
+| Demo video | [YouTube](https://vimeo.com/1214671814?share=copy&fl=sv&fe=ci) |
+| Docs | https://glass-pay.vercel.app/docs |
+| Demo Link | https://glass-pay.vercel.app |
 
 Everything runs on Base mainnet with real USDC; the only simulated leg is the Visa rail (Stripe test-mode Issuing), labeled honestly wherever it appears.
 
